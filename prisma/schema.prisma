@@ -1,0 +1,189 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String
+  password       String
+  role           String   @default("staff")
+  avatar         String?
+  phone          String?
+  active         Boolean  @default(true)
+  theme          String   @default("light")
+  language       String   @default("en")
+  notifySales    Boolean  @default(true)
+  notifyInventory Boolean  @default(true)
+  notifyTasks    Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  sales     Sale[]
+  salesEntries SalesEntry[]
+  auditLogs AuditLog[]
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  icon        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  sku         String   @unique
+  barcode     String?
+  description String?
+  imageUrl    String?
+  categoryId  String
+  buyingPrice Float
+  sellingPrice Float
+  quantity    Int      @default(0)
+  minStock    Int      @default(5)
+  brand       String?
+  size        String?
+  color       String?
+  fragrance   String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  supplierId  String?
+
+  category    Category   @relation(fields: [categoryId], references: [id])
+  supplier    Supplier?  @relation(fields: [supplierId], references: [id])
+  saleItems   SaleItem[]
+  stockMoves  StockMove[]
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  city      String?
+  country   String?
+  notes     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products       Product[]
+  purchaseOrders PurchaseOrder[]
+}
+
+model Sale {
+  id             String   @id @default(cuid())
+  invoiceNumber  String   @unique
+  customerId     String?
+  customerName   String?
+  customerPhone  String?
+  userId         String
+  subtotal       Float
+  discount       Float    @default(0)
+  total          Float
+  paymentMethod  String   @default("cash")
+  paymentStatus  String   @default("paid")
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id])
+  items     SaleItem[]
+  salesEntries SalesEntry[]
+}
+
+model SaleItem {
+  id        String @id @default(cuid())
+  saleId    String
+  productId String
+  quantity  Int
+  price     Float
+  total     Float
+
+  sale     Sale    @relation(fields: [saleId], references: [id])
+  product  Product @relation(fields: [productId], references: [id])
+}
+
+model StockMove {
+  id        String   @id @default(cuid())
+  productId String
+  type      String
+  quantity  Int
+  reason    String?
+  reference String?
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model PurchaseOrder {
+  id          String   @id @default(cuid())
+  supplierId  String
+  status      String   @default("pending")
+  totalAmount Float
+  notes       String?
+  items       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  productId String?
+  createdAt DateTime @default(now())
+}
+
+model SalesEntry {
+  id          String   @id @default(cuid())
+  productName String
+  quantity    Int
+  amount      Float
+  date        DateTime
+  userId      String
+  source      String   @default("manual")
+  saleId      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+  sale Sale? @relation(fields: [saleId], references: [id], onDelete: SetNull)
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  userName  String?
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+}
