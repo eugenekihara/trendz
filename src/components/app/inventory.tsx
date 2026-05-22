@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useAppStore } from '@/store'
+import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,6 +48,8 @@ interface Product {
 export function Inventory() {
   const user = useAppStore((s) => s.user)
   const authFetch = useAppStore((s) => s.authFetch)
+  const notifyDataChange = useAppStore((s) => s.notifyDataChange)
+  const onDataChange = useAppStore((s) => s.onDataChange)
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [suppliers, setSuppliers] = useState<any[]>([])
@@ -116,6 +118,21 @@ export function Inventory() {
     fetchProducts()
   }, [fetchProducts])
 
+  // Subscribe to cross-module data changes for instant refresh
+  useEffect(() => {
+    const unsubscribe = onDataChange((event: DataChangeEvent) => {
+      // When a sale is made, stock levels change — refresh product list
+      if (event === 'sale-created' || event === 'inventory-changed') {
+        fetchProducts()
+      }
+      // When categories change externally, refresh categories
+      if (event === 'category-changed') {
+        fetchCategories()
+      }
+    })
+    return unsubscribe
+  }, [onDataChange, fetchProducts, fetchCategories])
+
   // Refresh products when tab becomes visible (covers SPA navigation from Sales back to Inventory)
   useEffect(() => {
     const onVisibilityChange = () => {
@@ -159,6 +176,8 @@ export function Inventory() {
       toast.success(editingProduct ? 'Product updated' : 'Product created')
       setProductDialog(false)
       fetchProducts()
+      // Notify all other modules (POS, Dashboard, Reports) about product change
+      notifyDataChange(editingProduct ? 'product-updated' : 'product-created')
     } catch (error) {
       toast.error('Failed to save product')
     }
@@ -170,6 +189,8 @@ export function Inventory() {
       if (res.ok) {
         toast.success('Product deleted')
         fetchProducts()
+        // Notify all other modules about product deletion
+        notifyDataChange('product-deleted')
       } else {
         const data = await res.json()
         toast.error(data.error)
@@ -196,6 +217,8 @@ export function Inventory() {
       setCategoryDialog(false)
       setEditingCategory(null)
       fetchCategories()
+      // Notify all other modules about category change
+      notifyDataChange('category-changed')
     } catch {
       toast.error('Failed to save category')
     }
@@ -220,6 +243,9 @@ export function Inventory() {
       setReassignTo('')
       fetchCategories()
       fetchProducts()
+      // Notify all other modules about category and product changes
+      notifyDataChange('category-changed')
+      notifyDataChange('inventory-changed')
     } catch {
       toast.error('Failed to delete category')
     }

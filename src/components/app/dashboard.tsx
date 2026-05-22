@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useAppStore } from '@/store'
+import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { TrendingUp, Package, ShoppingCart, Truck, BarChart3, ShoppingBag, ArrowRight } from 'lucide-react'
@@ -31,6 +31,7 @@ const COLORS = ['#92400e', '#b45309', '#d97706', '#f59e0b', '#78350f', '#a16207'
 export function Dashboard() {
   const authFetch = useAppStore((s) => s.authFetch)
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
+  const onDataChange = useAppStore((s) => s.onDataChange)
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -59,6 +60,26 @@ export function Dashboard() {
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [fetchDashboard])
+
+  // Subscribe to cross-module data changes for instant refresh
+  useEffect(() => {
+    const unsubscribe = onDataChange((event: DataChangeEvent) => {
+      // Refresh dashboard whenever any relevant data changes
+      if (
+        event === 'sale-created' ||
+        event === 'sale-deleted' ||
+        event === 'product-created' ||
+        event === 'product-updated' ||
+        event === 'product-deleted' ||
+        event === 'inventory-changed' ||
+        event === 'category-changed' ||
+        event === 'manual-entry-created'
+      ) {
+        fetchDashboard()
+      }
+    })
+    return unsubscribe
+  }, [onDataChange, fetchDashboard])
 
   if (loading) {
     return (

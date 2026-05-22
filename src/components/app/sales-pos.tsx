@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useAppStore } from '@/store'
+import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +33,8 @@ interface CartItem {
 
 export function SalesPOS() {
   const authFetch = useAppStore((s) => s.authFetch)
+  const notifyDataChange = useAppStore((s) => s.notifyDataChange)
+  const onDataChange = useAppStore((s) => s.onDataChange)
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<any[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
@@ -120,6 +122,17 @@ export function SalesPOS() {
     fetchSettings()
     return () => { mountedRef.current = false }
   }, [fetchProducts, fetchCategories, fetchSettings])
+
+  // Subscribe to cross-module data changes for instant refresh
+  useEffect(() => {
+    const unsubscribe = onDataChange((event: DataChangeEvent) => {
+      if (event === 'product-created' || event === 'product-updated' || event === 'product-deleted' || event === 'inventory-changed' || event === 'category-changed') {
+        fetchProducts()
+        if (event === 'category-changed') fetchCategories()
+      }
+    })
+    return unsubscribe
+  }, [onDataChange, fetchProducts, fetchCategories])
 
   // Auto-refresh when the tab/window becomes visible again
   // This covers both: switching browser tabs AND SPA navigation (via visibilitychange)
@@ -226,6 +239,8 @@ export function SalesPOS() {
 
       // Refresh products to update stock levels immediately
       fetchProducts()
+      // Notify all other modules (Dashboard, Reports, Sales Tracking) about the new sale
+      notifyDataChange('sale-created')
     } catch {
       toast.error('Failed to complete sale')
     }

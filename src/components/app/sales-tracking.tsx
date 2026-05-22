@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useAppStore } from '@/store'
+import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,34 +9,45 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { TrendingUp, Plus, Calendar, ShoppingCart, ArrowRight } from 'lucide-react'
+import { TrendingUp, Plus, Calendar, ShoppingCart, ArrowRight, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function SalesTracking() {
   const user = useAppStore((s) => s.user)
   const authFetch = useAppStore((s) => s.authFetch)
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
+  const notifyDataChange = useAppStore((s) => s.notifyDataChange)
+  const onDataChange = useAppStore((s) => s.onDataChange)
   const [entries, setEntries] = useState<any[]>([])
+  const [summary, setSummary] = useState({ totalAmount: 0, totalQuantity: 0, totalEntries: 0 })
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [addDialog, setAddDialog] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [form, setForm] = useState({ productName: '', quantity: '', amount: '', date: '' })
 
-  const fetchEntries = useCallback(async () => {
+  const fetchEntries = useCallback(async (showRefresh = false) => {
     try {
+      if (showRefresh) setRefreshing(true)
       const params = new URLSearchParams()
       if (startDate) params.set('startDate', startDate)
       if (endDate) params.set('endDate', endDate)
+      params.set('limit', '50')
       const res = await authFetch(`/api/sales-tracking?${params}`)
       if (res.ok) {
         const data = await res.json()
         setEntries(data.entries)
+        // Use server-computed summary (not affected by pagination)
+        if (data.summary) {
+          setSummary(data.summary)
+        }
       }
     } catch (error) {
       console.error('Fetch entries error:', error)
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }, [authFetch, startDate, endDate])
 
@@ -53,6 +64,16 @@ export function SalesTracking() {
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [fetchEntries])
 
+  // Subscribe to cross-module data changes for instant refresh
+  useEffect(() => {
+    const unsubscribe = onDataChange((event: DataChangeEvent) => {
+      if (event === 'sale-created' || event === 'sale-deleted' || event === 'manual-entry-created') {
+        fetchEntries()
+      }
+    })
+    return unsubscribe
+  }, [onDataChange, fetchEntries])
+
   const addEntry = async () => {
     try {
       const res = await authFetch('/api/sales-tracking', {
@@ -68,34 +89,33 @@ export function SalesTracking() {
       setAddDialog(false)
       setForm({ productName: '', quantity: '', amount: '', date: '' })
       fetchEntries()
+      // Notify other modules about the new manual entry
+      notifyDataChange('manual-entry-created')
     } catch {
       toast.error('Failed to add entry')
     }
   }
 
-  const totalAmount = entries.reduce((sum, e) => sum + e.amount, 0)
-  const totalQty = entries.reduce((sum, e) => sum + e.quantity, 0)
-
   return (
     <div className="space-y-4">
-      {/* Summary */}
+      {/* Summary — uses server-computed totals, not affected by pagination */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Entries</p>
-            <p className="text-2xl font-bold">{entries.length}</p>
+            <p className="text-2xl font-bold">{summary.totalEntries}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Quantity</p>
-            <p className="text-2xl font-bold">{totalQty}</p>
+            <p className="text-2xl font-bold">{summary.totalQuantity}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Amount</p>
-            <p className="text-2xl font-bold">KES {totalAmount.toLocaleString()}</p>
+            <p className="text-2xl font-bold">KES {summary.totalAmount.toLocaleString()}</p>
           </CardContent>
         </Card>
       </div>
@@ -109,10 +129,15 @@ export function SalesTracking() {
           <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-9 text-sm w-40" />
         </div>
         <Button variant="outline" size="sm" onClick={() => { setStartDate(''); setEndDate('') }}>Clear</Button>
-        <div className="flex-1" />
-        <Button onClick={() => setAddDialog(true)} className="bg-amber-800 hover:bg-amber-900 text-white">
-          <Plus className="h-4 w-4 mr-2" /> Manual Entry
+        <Button variant="outline" size="icon" onClick={() => fetchEntries(true)} disabled={refreshing} title="Refresh">
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
         </Button>
+        <div className="flex-1" />
+        {user?.role === 'admin' && (
+          <Button onClick={() => setAddDialog(true)} className="bg-amber-800 hover:bg-amber-900 text-white">
+            <Plus className="h-4 w-4 mr-2" /> Manual Entry
+          </Button>
+        )}
       </div>
 
       {/* Table */}

@@ -30,7 +30,9 @@ export async function GET(request: Request) {
       if (endDate) where.date.lte = new Date(endDate)
     }
 
-    const [entries, total] = await Promise.all([
+    // Fetch paginated entries AND aggregate summary in parallel
+    // Summary is computed over ALL matching entries, not just the current page
+    const [entries, total, summary] = await Promise.all([
       db.salesEntry.findMany({
         where,
         include: { user: { select: { id: true, name: true } } },
@@ -39,9 +41,25 @@ export async function GET(request: Request) {
         take: limit,
       }),
       db.salesEntry.count({ where }),
+      db.salesEntry.aggregate({
+        where,
+        _sum: { amount: true, quantity: true },
+        _count: true,
+      }),
     ])
 
-    return NextResponse.json({ entries, total, page, limit }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
+    return NextResponse.json({
+      entries,
+      total,
+      page,
+      limit,
+      // Summary totals across ALL entries (not just current page)
+      summary: {
+        totalAmount: summary._sum.amount || 0,
+        totalQuantity: summary._sum.quantity || 0,
+        totalEntries: summary._count,
+      },
+    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Sales tracking GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch sales entries' }, { status: 500 })
