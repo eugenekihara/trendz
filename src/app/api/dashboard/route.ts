@@ -14,7 +14,7 @@ export async function GET() {
 
     const [
       totalProducts,
-      lowStockProducts,
+      lowStockProductsRaw,
       totalSales,
       monthSales,
       totalRevenue,
@@ -24,7 +24,9 @@ export async function GET() {
       totalUsers,
     ] = await Promise.all([
       db.product.count({ where: { active: true } }),
-      db.product.count({ where: { active: true, quantity: { lte: 5 } } }),
+      // Low stock: products where quantity > 0 but quantity <= minStock
+      // Since SQLite can't compare columns in WHERE, we fetch all active products and filter
+      db.product.findMany({ where: { active: true }, select: { quantity: true, minStock: true } }),
       db.sale.count(),
       db.sale.count({ where: { createdAt: { gte: startOfMonth } } }),
       db.sale.aggregate({ _sum: { total: true } }),
@@ -49,7 +51,9 @@ export async function GET() {
       include: { _count: { select: { products: { where: { active: true } } } } },
     })
 
-    // Top products
+    const lowStockProducts = (lowStockProductsRaw as Array<{ quantity: number; minStock: number }>).filter(p => p.quantity > 0 && p.quantity <= p.minStock).length
+
+    // Top products - fetch all at once instead of N+1
     const topProducts = await db.saleItem.groupBy({
       by: ['productId'],
       _sum: { quantity: true, total: true },
@@ -57,15 +61,15 @@ export async function GET() {
       take: 5,
     })
 
-    const topProductsWithName = await Promise.all(
-      topProducts.map(async (item) => {
-        const product = await db.product.findUnique({
-          where: { id: item.productId },
-          select: { name: true, category: { select: { name: true } } },
-        })
-        return { ...item, product }
-      })
-    )
+    const topProductIds = topProducts.map(item => item.productId)
+    const topProductsData = await db.product.findMany({
+      where: { id: { in: topProductIds } },
+      select: { id: true, name: true, category: { select: { name: true } } },
+    })
+    const topProductsWithName = topProducts.map(item => ({
+      ...item,
+      product: topProductsData.find(p => p.id === item.productId) || null,
+    }))
 
     // Daily sales last 7 days
     const sevenDaysAgo = new Date()

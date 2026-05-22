@@ -31,25 +31,35 @@ export async function GET(request: Request) {
     }
 
     if (stockFilter === 'low') {
-      where.quantity = { lte: db.product.fields.minStock ? 5 : 5 }
+      // SQLite doesn't support comparing columns, so fetch products where quantity <= minStock client-side
+      // We use a reasonable default threshold; the frontend can further filter
+      where.quantity = { gt: 0 }
+      // We'll post-filter for low stock after fetching
     } else if (stockFilter === 'out') {
       where.quantity = { equals: 0 }
     } else if (stockFilter === 'in') {
       where.quantity = { gt: 0 }
     }
 
-    const [products, total] = await Promise.all([
+    let [products, total] = await Promise.all([
       db.product.findMany({
         where,
         include: { category: true, supplier: true },
         orderBy: { updatedAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
       }),
       db.product.count({ where }),
     ])
 
-    return NextResponse.json({ products, total, page, limit })
+    // Post-filter for low stock (quantity > 0 but <= minStock)
+    if (stockFilter === 'low') {
+      products = products.filter(p => p.quantity > 0 && p.quantity <= p.minStock)
+      total = products.length
+    }
+
+    // Apply pagination after filtering
+    const paginatedProducts = products.slice((page - 1) * limit, page * limit)
+
+    return NextResponse.json({ products: paginatedProducts, total, page, limit })
   } catch (error) {
     console.error('Inventory GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory' }, { status: 500 })
@@ -64,16 +74,28 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json()
+
+    // Validate required fields
+    if (!data.name?.trim() || !data.sku?.trim() || !data.categoryId) {
+      return NextResponse.json({ error: 'Product name, SKU, and category are required' }, { status: 400 })
+    }
+
+    const buyingPrice = parseFloat(data.buyingPrice)
+    const sellingPrice = parseFloat(data.sellingPrice)
+    if (isNaN(buyingPrice) || isNaN(sellingPrice) || buyingPrice < 0 || sellingPrice < 0) {
+      return NextResponse.json({ error: 'Valid buying and selling prices are required' }, { status: 400 })
+    }
+
     const product = await db.product.create({
       data: {
-        name: data.name,
-        sku: data.sku,
+        name: data.name.trim(),
+        sku: data.sku.trim(),
         barcode: data.barcode || null,
         description: data.description || null,
         imageUrl: data.imageUrl || null,
         categoryId: data.categoryId,
-        buyingPrice: parseFloat(data.buyingPrice),
-        sellingPrice: parseFloat(data.sellingPrice),
+        buyingPrice,
+        sellingPrice,
         quantity: parseInt(data.quantity) || 0,
         minStock: parseInt(data.minStock) || 5,
         brand: data.brand || null,

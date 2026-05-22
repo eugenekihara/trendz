@@ -29,9 +29,14 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json()
+
+    if (!data.name?.trim()) {
+      return NextResponse.json({ error: 'Supplier name is required' }, { status: 400 })
+    }
+
     const supplier = await db.supplier.create({
       data: {
-        name: data.name,
+        name: data.name.trim(),
         email: data.email || null,
         phone: data.phone || null,
         address: data.address || null,

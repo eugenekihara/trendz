@@ -53,11 +53,26 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json()
+
+    // Validate required fields
+    if (!data.productName?.trim()) {
+      return NextResponse.json({ error: 'Product name is required' }, { status: 400 })
+    }
+
+    const quantity = parseInt(data.quantity)
+    const amount = parseFloat(data.amount)
+    if (isNaN(quantity) || quantity <= 0) {
+      return NextResponse.json({ error: 'Valid quantity is required' }, { status: 400 })
+    }
+    if (isNaN(amount) || amount < 0) {
+      return NextResponse.json({ error: 'Valid amount is required' }, { status: 400 })
+    }
+
     const entry = await db.salesEntry.create({
       data: {
-        productName: data.productName,
-        quantity: parseInt(data.quantity),
-        amount: parseFloat(data.amount),
+        productName: data.productName.trim(),
+        quantity,
+        amount,
         date: new Date(data.date || new Date()),
         userId: auth.user!.id,
         source: 'manual',

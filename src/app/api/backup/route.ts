@@ -10,7 +10,7 @@ export async function GET() {
     }
 
     const [users, categories, products, suppliers, sales, saleItems, salesEntries, settings, notifications, auditLogs] = await Promise.all([
-      db.user.findMany(),
+      db.user.findMany({ select: { id: true, email: true, name: true, role: true, avatar: true, phone: true, active: true, theme: true, language: true, notifySales: true, notifyInventory: true, notifyTasks: true, createdAt: true, updatedAt: true } }),
       db.category.findMany(),
       db.product.findMany(),
       db.supplier.findMany(),
@@ -45,33 +45,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid backup data' }, { status: 400 })
     }
 
-    // Clear existing data and restore
+    // Clear existing data and restore in a transaction for atomicity
     const { users, categories, products, suppliers, sales, saleItems, salesEntries, settings, notifications } = backup.data
 
-    // Delete in order of dependencies
-    await db.auditLog.deleteMany()
-    await db.stockMove.deleteMany()
-    await db.salesEntry.deleteMany()
-    await db.saleItem.deleteMany()
-    await db.sale.deleteMany()
-    await db.notification.deleteMany()
-    await db.product.deleteMany()
-    await db.purchaseOrder.deleteMany()
-    await db.supplier.deleteMany()
-    await db.category.deleteMany()
-    await db.setting.deleteMany()
-    await db.user.deleteMany()
+    await db.$transaction(async (tx) => {
+      // Delete in order of dependencies
+      await tx.auditLog.deleteMany()
+      await tx.stockMove.deleteMany()
+      await tx.salesEntry.deleteMany()
+      await tx.saleItem.deleteMany()
+      await tx.sale.deleteMany()
+      await tx.notification.deleteMany()
+      await tx.product.deleteMany()
+      await tx.purchaseOrder.deleteMany()
+      await tx.supplier.deleteMany()
+      await tx.category.deleteMany()
+      await tx.setting.deleteMany()
+      await tx.user.deleteMany()
 
-    // Restore in order
-    if (users?.length) await db.user.createMany({ data: users })
-    if (categories?.length) await db.category.createMany({ data: categories })
-    if (suppliers?.length) await db.supplier.createMany({ data: suppliers })
-    if (settings?.length) await db.setting.createMany({ data: settings })
-    if (products?.length) await db.product.createMany({ data: products })
-    if (sales?.length) await db.sale.createMany({ data: sales })
-    if (saleItems?.length) await db.saleItem.createMany({ data: saleItems })
-    if (salesEntries?.length) await db.salesEntry.createMany({ data: salesEntries })
-    if (notifications?.length) await db.notification.createMany({ data: notifications })
+      // Restore in order
+      if (users?.length) await tx.user.createMany({ data: users })
+      if (categories?.length) await tx.category.createMany({ data: categories })
+      if (suppliers?.length) await tx.supplier.createMany({ data: suppliers })
+      if (settings?.length) await tx.setting.createMany({ data: settings })
+      if (products?.length) await tx.product.createMany({ data: products })
+      if (sales?.length) await tx.sale.createMany({ data: sales })
+      if (saleItems?.length) await tx.saleItem.createMany({ data: saleItems })
+      if (salesEntries?.length) await tx.salesEntry.createMany({ data: salesEntries })
+      if (notifications?.length) await tx.notification.createMany({ data: notifications })
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -14,7 +14,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     if (data.name) {
       const existing = await db.category.findFirst({
-        where: { name: { equals: data.name.trim(), mode: 'insensitive' }, id: { not: id } },
+        where: { name: { equals: data.name.trim() }, id: { not: id } },
       })
       if (existing) {
         return NextResponse.json({ error: 'Category name already exists' }, { status: 400 })

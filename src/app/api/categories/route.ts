@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     }
 
     const existing = await db.category.findFirst({
-      where: { name: { equals: data.name.trim(), mode: 'insensitive' } },
+      where: { name: { equals: data.name.trim() } },
     })
     if (existing) {
       return NextResponse.json({ error: 'Category already exists' }, { status: 400 })

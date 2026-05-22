@@ -4,6 +4,11 @@ import { verifyAuth } from '@/lib/auth'
 
 export async function GET() {
   try {
+    const auth = await verifyAuth()
+    if (!auth.authenticated) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
     const settings = await db.setting.findMany()
     const settingsMap: Record<string, string> = {}
     for (const s of settings) {
