@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { ensureDbSeeded } from '@/lib/seed'
 
+// Force dynamic rendering — never cache this route
+export const dynamic = 'force-dynamic'
+
 /**
  * GET /api/public-settings - Get public shop settings (no auth required)
  * Used by login page and receipt generation to display shop name/tagline.
@@ -24,7 +27,7 @@ export async function GET() {
       result[s.key] = s.value
     }
 
-    return NextResponse.json(result)
+    return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Public settings GET error:', error)
     return NextResponse.json({ shopName: 'Trendz', currency: 'KES' })

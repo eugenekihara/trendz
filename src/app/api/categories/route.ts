@@ -2,13 +2,16 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+// Force dynamic rendering — never cache this route
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const categories = await db.category.findMany({
       orderBy: { name: 'asc' },
       include: { _count: { select: { products: { where: { active: true } } } } },
     })
-    return NextResponse.json(categories)
+    return NextResponse.json(categories, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Categories GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch categories' }, { status: 500 })

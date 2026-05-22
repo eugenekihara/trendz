@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+// Force dynamic rendering — never cache this route
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const auth = await verifyAuth('admin')
@@ -14,7 +17,7 @@ export async function GET() {
       include: { _count: { select: { products: { where: { active: true } } } } },
       orderBy: { name: 'asc' },
     })
-    return NextResponse.json(suppliers)
+    return NextResponse.json(suppliers, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Suppliers GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch suppliers' }, { status: 500 })

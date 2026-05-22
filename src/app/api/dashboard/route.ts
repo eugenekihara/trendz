@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+// Force dynamic rendering — never cache this route
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const auth = await verifyAuth('admin')
@@ -110,7 +113,7 @@ export async function GET() {
       categoryBreakdown,
       topProducts: topProductsWithName,
       dailySales: Object.entries(dailySales).map(([date, total]) => ({ date, total })),
-    })
+    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Dashboard GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch dashboard' }, { status: 500 })

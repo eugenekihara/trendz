@@ -50,6 +50,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (options.body && typeof options.body === 'string') {
       headers.set('Content-Type', 'application/json')
     }
-    return fetch(url, { ...options, headers })
+    // Always fetch fresh data — never use browser cache for API calls
+    // This ensures newly created products, sales, etc. are immediately visible
+    const cacheOpt = options.cache || 'no-store'
+    return fetch(url, { ...options, headers, cache: cacheOpt })
   },
 }))

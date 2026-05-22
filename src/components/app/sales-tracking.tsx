@@ -44,6 +44,15 @@ export function SalesTracking() {
     fetchEntries()
   }, [fetchEntries])
 
+  // Refresh data when tab becomes visible (covers SPA navigation)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchEntries()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [fetchEntries])
+
   const addEntry = async () => {
     try {
       const res = await authFetch('/api/sales-tracking', {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,8 @@ interface Product {
   sku: string
   sellingPrice: number
   quantity: number
+  minStock: number
+  active: boolean
   category: { id: string; name: string }
 }
 
@@ -49,23 +51,32 @@ export function SalesPOS() {
     receiptFooter: 'Thank you for shopping with us!',
     currency: 'KES',
   })
+  const mountedRef = useRef(true)
 
-  // Fetch products independently — never block on other calls
+  // Fetch all active products (including out-of-stock so user can see them)
+  // Cache-busting timestamp ensures we never get a stale browser-cached response
   const fetchProducts = useCallback(async (showRefresh = false) => {
     try {
       if (showRefresh) setRefreshing(true)
-      const res = await authFetch('/api/inventory?limit=200')
+      const ts = Date.now()
+      const res = await authFetch(`/api/inventory?limit=500&_t=${ts}`)
       if (res.ok) {
         const data = await res.json()
-        setProducts(data.products.filter((p: any) => p.quantity > 0 && p.active !== false))
+        // Show all active products — out-of-stock ones will be displayed but not sellable
+        const activeProducts = data.products.filter((p: any) => p.active !== false)
+        if (mountedRef.current) {
+          setProducts(activeProducts)
+        }
       } else {
         console.error('Failed to fetch products:', res.status)
       }
     } catch (error) {
       console.error('Fetch products error:', error)
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      if (mountedRef.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
   }, [authFetch])
 
@@ -73,7 +84,10 @@ export function SalesPOS() {
   const fetchCategories = useCallback(async () => {
     try {
       const res = await authFetch('/api/categories')
-      if (res.ok) setCategories(await res.json())
+      if (res.ok) {
+        const data = await res.json()
+        if (mountedRef.current) setCategories(data)
+      }
     } catch (error) {
       console.error('Fetch categories error:', error)
     }
@@ -85,11 +99,13 @@ export function SalesPOS() {
       const res = await authFetch('/api/public-settings')
       if (res.ok) {
         const settings = await res.json()
-        setShopSettings({
-          shopName: settings.shopName || 'Trendz',
-          receiptFooter: settings.receiptFooter || 'Thank you for shopping with us!',
-          currency: settings.currency || 'KES',
-        })
+        if (mountedRef.current) {
+          setShopSettings({
+            shopName: settings.shopName || 'Trendz',
+            receiptFooter: settings.receiptFooter || 'Thank you for shopping with us!',
+            currency: settings.currency || 'KES',
+          })
+        }
       }
     } catch (error) {
       console.error('Fetch settings error:', error)
@@ -98,16 +114,28 @@ export function SalesPOS() {
 
   // Load all data on mount — each call is independent so one failure doesn't block others
   useEffect(() => {
+    mountedRef.current = true
     fetchProducts()
     fetchCategories()
     fetchSettings()
+    return () => { mountedRef.current = false }
   }, [fetchProducts, fetchCategories, fetchSettings])
 
-  // Re-fetch products when window regains focus (ensures fresh data after adding products in another tab/window)
+  // Auto-refresh when the tab/window becomes visible again
+  // This covers both: switching browser tabs AND SPA navigation (via visibilitychange)
   useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchProducts()
+      }
+    }
     const onFocus = () => { fetchProducts() }
+    document.addEventListener('visibilitychange', onVisibilityChange)
     window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [fetchProducts])
 
   // Manual refresh all data
@@ -122,7 +150,14 @@ export function SalesPOS() {
     return matchSearch && matchCat
   })
 
+  const inStockProducts = filtered.filter(p => p.quantity > 0)
+  const outOfStockProducts = filtered.filter(p => p.quantity <= 0)
+
   const addToCart = (product: Product) => {
+    if (product.quantity <= 0) {
+      toast.error('This product is out of stock')
+      return
+    }
     const existing = cart.find((c) => c.product.id === product.id)
     if (existing) {
       if (existing.quantity >= product.quantity) {
@@ -189,7 +224,7 @@ export function SalesPOS() {
       setReceiptDialog(true)
       toast.success('Sale completed!')
 
-      // Refresh products to update stock levels
+      // Refresh products to update stock levels immediately
       fetchProducts()
     } catch {
       toast.error('Failed to complete sale')
@@ -246,23 +281,53 @@ export function SalesPOS() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pr-4">
-              {filtered.map((product) => (
-                <Card
-                  key={product.id}
-                  className="cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
-                  onClick={() => addToCart(product)}
-                >
-                  <CardContent className="p-3">
-                    <p className="font-medium text-sm truncate">{product.name}</p>
-                    <p className="text-xs text-muted-foreground">{product.category?.name}</p>
-                    <div className="flex justify-between items-center mt-2">
-                      <span className="font-bold text-sm">KES {product.sellingPrice.toLocaleString()}</span>
-                      <Badge variant="outline" className="text-xs">{product.quantity} left</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+            <div className="space-y-4 pr-4">
+              {/* In-stock products */}
+              {inStockProducts.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {inStockProducts.map((product) => (
+                    <Card
+                      key={product.id}
+                      className="cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
+                      onClick={() => addToCart(product)}
+                    >
+                      <CardContent className="p-3">
+                        <p className="font-medium text-sm truncate">{product.name}</p>
+                        <p className="text-xs text-muted-foreground">{product.category?.name}</p>
+                        <div className="flex justify-between items-center mt-2">
+                          <span className="font-bold text-sm">KES {product.sellingPrice.toLocaleString()}</span>
+                          <Badge variant="outline" className="text-xs">{product.quantity} left</Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+
+              {/* Out-of-stock products — visible but not clickable */}
+              {outOfStockProducts.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2 px-1">Out of Stock</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {outOfStockProducts.map((product) => (
+                      <Card
+                        key={product.id}
+                        className="opacity-50 cursor-not-allowed"
+                        onClick={() => addToCart(product)}
+                      >
+                        <CardContent className="p-3">
+                          <p className="font-medium text-sm truncate">{product.name}</p>
+                          <p className="text-xs text-muted-foreground">{product.category?.name}</p>
+                          <div className="flex justify-between items-center mt-2">
+                            <span className="font-bold text-sm">KES {product.sellingPrice.toLocaleString()}</span>
+                            <Badge variant="destructive" className="text-xs">Out of stock</Badge>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </ScrollArea>

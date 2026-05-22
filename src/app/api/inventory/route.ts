@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+// Force dynamic rendering — never cache this route
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request) {
   try {
     const auth = await verifyAuth()
@@ -59,7 +62,10 @@ export async function GET(request: Request) {
     // Apply pagination after filtering
     const paginatedProducts = products.slice((page - 1) * limit, page * limit)
 
-    return NextResponse.json({ products: paginatedProducts, total, page, limit })
+    return NextResponse.json(
+      { products: paginatedProducts, total, page, limit },
+      { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+    )
   } catch (error) {
     console.error('Inventory GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory' }, { status: 500 })

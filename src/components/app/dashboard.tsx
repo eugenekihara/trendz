@@ -51,6 +51,15 @@ export function Dashboard() {
     fetchDashboard()
   }, [fetchDashboard])
 
+  // Refresh data when tab becomes visible (covers SPA navigation)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchDashboard()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [fetchDashboard])
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

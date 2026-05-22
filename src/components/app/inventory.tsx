@@ -116,6 +116,15 @@ export function Inventory() {
     fetchProducts()
   }, [fetchProducts])
 
+  // Refresh products when tab becomes visible (covers SPA navigation from Sales back to Inventory)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchProducts()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [fetchProducts])
+
   const openProductDialog = (product?: Product) => {
     if (product) {
       setEditingProduct(product)

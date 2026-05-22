@@ -44,6 +44,18 @@ export function Reports() {
     fetchInventoryData()
   }, [fetchSalesData, fetchInventoryData])
 
+  // Refresh data when tab becomes visible (covers SPA navigation)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchSalesData()
+        fetchInventoryData()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [fetchSalesData, fetchInventoryData])
+
   // Aggregate sales by date
   const salesByDate: Record<string, number> = {}
   salesData.forEach((s) => {
