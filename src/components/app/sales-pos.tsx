@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAppStore } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, Receipt, Package } from 'lucide-react'
+import { Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, Receipt, Package, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Product {
@@ -42,40 +42,79 @@ export function SalesPOS() {
   const [discount, setDiscount] = useState(0)
   const [receiptDialog, setReceiptDialog] = useState(false)
   const [lastSale, setLastSale] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [shopSettings, setShopSettings] = useState<{ shopName: string; receiptFooter: string; currency: string }>({
     shopName: 'Trendz',
     receiptFooter: 'Thank you for shopping with us!',
     currency: 'KES',
   })
 
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        const [prodRes, catRes, settingsRes] = await Promise.all([
-          authFetch('/api/inventory?limit=100'),
-          authFetch('/api/categories'),
-          authFetch('/api/public-settings'),
-        ])
-        if (cancelled) return
-        if (prodRes.ok) {
-          const data = await prodRes.json()
-          setProducts(data.products.filter((p: any) => p.quantity > 0))
-        }
-        if (catRes.ok) setCategories(await catRes.json())
-        if (settingsRes.ok) {
-          const settings = await settingsRes.json()
-          setShopSettings({
-            shopName: settings.shopName || 'Trendz',
-            receiptFooter: settings.receiptFooter || 'Thank you for shopping with us!',
-            currency: settings.currency || 'KES',
-          })
-        }
-      } catch {}
+  // Fetch products independently — never block on other calls
+  const fetchProducts = useCallback(async (showRefresh = false) => {
+    try {
+      if (showRefresh) setRefreshing(true)
+      const res = await authFetch('/api/inventory?limit=200')
+      if (res.ok) {
+        const data = await res.json()
+        setProducts(data.products.filter((p: any) => p.quantity > 0 && p.active !== false))
+      } else {
+        console.error('Failed to fetch products:', res.status)
+      }
+    } catch (error) {
+      console.error('Fetch products error:', error)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
     }
-    load()
-    return () => { cancelled = true }
   }, [authFetch])
+
+  // Fetch categories independently
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/categories')
+      if (res.ok) setCategories(await res.json())
+    } catch (error) {
+      console.error('Fetch categories error:', error)
+    }
+  }, [authFetch])
+
+  // Fetch shop settings independently
+  const fetchSettings = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/public-settings')
+      if (res.ok) {
+        const settings = await res.json()
+        setShopSettings({
+          shopName: settings.shopName || 'Trendz',
+          receiptFooter: settings.receiptFooter || 'Thank you for shopping with us!',
+          currency: settings.currency || 'KES',
+        })
+      }
+    } catch (error) {
+      console.error('Fetch settings error:', error)
+    }
+  }, [authFetch])
+
+  // Load all data on mount — each call is independent so one failure doesn't block others
+  useEffect(() => {
+    fetchProducts()
+    fetchCategories()
+    fetchSettings()
+  }, [fetchProducts, fetchCategories, fetchSettings])
+
+  // Re-fetch products when window regains focus (ensures fresh data after adding products in another tab/window)
+  useEffect(() => {
+    const onFocus = () => { fetchProducts() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [fetchProducts])
+
+  // Manual refresh all data
+  const refreshAll = async () => {
+    setRefreshing(true)
+    await Promise.all([fetchProducts(true), fetchCategories(), fetchSettings()])
+  }
 
   const filtered = products.filter((p) => {
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase())
@@ -150,12 +189,8 @@ export function SalesPOS() {
       setReceiptDialog(true)
       toast.success('Sale completed!')
 
-      // Refresh products to update stock
-      const prodRes = await authFetch('/api/inventory?limit=100')
-      if (prodRes.ok) {
-        const prodData = await prodRes.json()
-        setProducts(prodData.products.filter((p: any) => p.quantity > 0))
-      }
+      // Refresh products to update stock levels
+      fetchProducts()
     } catch {
       toast.error('Failed to complete sale')
     }
@@ -177,14 +212,37 @@ export function SalesPOS() {
               {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
             </SelectContent>
           </Select>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={refreshAll}
+            disabled={refreshing}
+            title="Refresh products"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
         <ScrollArea className="h-[calc(100vh-16rem)]">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center h-64 text-muted-foreground">
+              <div className="text-center">
+                <RefreshCw className="h-8 w-8 mx-auto mb-2 animate-spin opacity-50" />
+                <p>Loading products...</p>
+              </div>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground">
               <div className="text-center">
                 <Package className="h-10 w-10 mx-auto mb-2 opacity-50" />
                 <p>No products available</p>
-                <p className="text-xs mt-1">Add products to inventory to start selling</p>
+                <p className="text-xs mt-1">
+                  {products.length === 0
+                    ? 'Add products to inventory to start selling'
+                    : 'Try adjusting your search or category filter'}
+                </p>
+                <Button variant="outline" size="sm" className="mt-3" onClick={refreshAll}>
+                  <RefreshCw className="h-3 w-3 mr-1" /> Refresh
+                </Button>
               </div>
             </div>
           ) : (

@@ -69,7 +69,9 @@ export default function Home() {
 
     return (
       <AppLayout>
-        {renderPage()}
+        <div key={currentPage}>
+          {renderPage()}
+        </div>
       </AppLayout>
     )
   }

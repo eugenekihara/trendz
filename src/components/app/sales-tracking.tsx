@@ -33,7 +33,9 @@ export function SalesTracking() {
         const data = await res.json()
         setEntries(data.entries)
       }
-    } catch {} finally {
+    } catch (error) {
+      console.error('Fetch entries error:', error)
+    } finally {
       setLoading(false)
     }
   }, [authFetch, startDate, endDate])

@@ -16,26 +16,33 @@ export function Reports() {
   const [period, setPeriod] = useState('month')
   const [loading, setLoading] = useState(true)
 
-  const fetchReportData = useCallback(async () => {
+  const fetchSalesData = useCallback(async () => {
     try {
-      const [salesRes, catRes] = await Promise.all([
-        authFetch('/api/sales-tracking?limit=100'),
-        authFetch('/api/categories'),
-      ])
-
-      if (salesRes.ok) {
-        const data = await salesRes.json()
+      const res = await authFetch('/api/sales-tracking?limit=100')
+      if (res.ok) {
+        const data = await res.json()
         setSalesData(data.entries || [])
       }
-      if (catRes.ok) {
-        setInventoryData(await catRes.json())
-      }
-    } catch {} finally {
+    } catch (error) {
+      console.error('Fetch sales data error:', error)
+    }
+  }, [authFetch])
+
+  const fetchInventoryData = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/categories')
+      if (res.ok) setInventoryData(await res.json())
+    } catch (error) {
+      console.error('Fetch inventory data error:', error)
+    } finally {
       setLoading(false)
     }
   }, [authFetch])
 
-  useEffect(() => { fetchReportData() }, [fetchReportData])
+  useEffect(() => {
+    fetchSalesData()
+    fetchInventoryData()
+  }, [fetchSalesData, fetchInventoryData])
 
   // Aggregate sales by date
   const salesByDate: Record<string, number> = {}
