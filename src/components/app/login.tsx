@@ -22,9 +22,6 @@ export function Login() {
     setLoading(true)
 
     try {
-      // Ensure DB is seeded
-      await fetch('/api/seed', { method: 'POST' })
-
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -61,7 +58,7 @@ export function Login() {
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@trendz.com"
+                placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -98,10 +95,6 @@ export function Login() {
                 'Sign In'
               )}
             </Button>
-            <div className="text-xs text-center text-muted-foreground mt-4 space-y-1">
-              <p>Demo: admin@trendz.com / admin123</p>
-              <p>Staff: staff@trendz.com / staff123</p>
-            </div>
           </form>
         </CardContent>
       </Card>

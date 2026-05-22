@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   autoBackupFrequency: 'daily',
   language: 'en',
   dashboardLayout: 'default',
+  systemInitialized: 'false',
 }
 
 const DEFAULT_CATEGORIES = [
@@ -45,8 +46,12 @@ const DEFAULT_CATEGORIES = [
   { name: 'Other', description: 'Other fashion items', icon: 'Package' },
 ]
 
+/**
+ * Ensure essential system settings exist (called on first load).
+ * Does NOT create any demo users or sample data.
+ */
 export async function ensureDbSeeded() {
-  // Seed settings
+  // Seed settings only if table is empty
   const existingSettings = await db.setting.count()
   if (existingSettings === 0) {
     for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
@@ -58,7 +63,7 @@ export async function ensureDbSeeded() {
     }
   }
 
-  // Seed categories
+  // Seed default categories only if table is empty
   const existingCategories = await db.category.count()
   if (existingCategories === 0) {
     for (const cat of DEFAULT_CATEGORIES) {
@@ -66,36 +71,82 @@ export async function ensureDbSeeded() {
     }
   }
 
-  // Seed default users
-  const existingUsers = await db.user.count()
-  if (existingUsers === 0) {
-    await db.user.create({
-      data: {
-        email: 'admin@trendz.com',
-        name: 'Admin User',
-        password: 'admin123',
-        role: 'admin',
-        active: true,
-        theme: 'light',
-        language: 'en',
-        notifySales: true,
-        notifyInventory: true,
-        notifyTasks: true,
-      },
-    })
-    await db.user.create({
-      data: {
-        email: 'staff@trendz.com',
-        name: 'Jane Staff',
-        password: 'staff123',
-        role: 'staff',
-        active: true,
-        theme: 'light',
-        language: 'en',
-        notifySales: true,
-        notifyInventory: true,
-        notifyTasks: true,
-      },
+  // NO demo users are created.
+  // The first admin account must be created through the setup wizard.
+}
+
+/**
+ * Check if the system has been initialized (first admin account created).
+ */
+export async function isSystemInitialized(): Promise<boolean> {
+  const userCount = await db.user.count()
+  if (userCount > 0) return true
+
+  // Also check the systemInitialized setting
+  const setting = await db.setting.findUnique({ where: { key: 'systemInitialized' } })
+  return setting?.value === 'true'
+}
+
+/**
+ * Create the initial admin account during setup.
+ */
+export async function createInitialAdmin(data: {
+  name: string
+  email: string
+  password: string
+  shopName?: string
+}) {
+  // Ensure settings exist first
+  await ensureDbSeeded()
+
+  // Create admin user
+  const user = await db.user.create({
+    data: {
+      email: data.email,
+      name: data.name,
+      password: data.password,
+      role: 'admin',
+      active: true,
+      theme: 'light',
+      language: 'en',
+      notifySales: true,
+      notifyInventory: true,
+      notifyTasks: true,
+    },
+  })
+
+  // Update shop name if provided
+  if (data.shopName) {
+    await db.setting.upsert({
+      where: { key: 'shopName' },
+      update: { value: data.shopName },
+      create: { key: 'shopName', value: data.shopName },
     })
   }
+
+  // Mark system as initialized
+  await db.setting.upsert({
+    where: { key: 'systemInitialized' },
+    update: { value: 'true' },
+    create: { key: 'systemInitialized', value: 'true' },
+  })
+
+  return user
+}
+
+/**
+ * Clear all business data from the database, keeping only user accounts and settings.
+ * Used when an admin wants to start fresh with real data.
+ */
+export async function clearBusinessData() {
+  await db.auditLog.deleteMany()
+  await db.stockMove.deleteMany()
+  await db.salesEntry.deleteMany()
+  await db.saleItem.deleteMany()
+  await db.sale.deleteMany()
+  await db.notification.deleteMany()
+  await db.product.deleteMany()
+  await db.purchaseOrder.deleteMany()
+  await db.supplier.deleteMany()
+  return { success: true }
 }

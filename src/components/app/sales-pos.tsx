@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, Receipt } from 'lucide-react'
+import { Search, ShoppingCart, Plus, Minus, Trash2, CreditCard, Receipt, Package } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Product {
@@ -42,14 +42,20 @@ export function SalesPOS() {
   const [discount, setDiscount] = useState(0)
   const [receiptDialog, setReceiptDialog] = useState(false)
   const [lastSale, setLastSale] = useState<any>(null)
+  const [shopSettings, setShopSettings] = useState<{ shopName: string; receiptFooter: string; currency: string }>({
+    shopName: 'Trendz',
+    receiptFooter: 'Thank you for shopping with us!',
+    currency: 'KES',
+  })
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       try {
-        const [prodRes, catRes] = await Promise.all([
+        const [prodRes, catRes, settingsRes] = await Promise.all([
           authFetch('/api/inventory?limit=100'),
           authFetch('/api/categories'),
+          authFetch('/api/public-settings'),
         ])
         if (cancelled) return
         if (prodRes.ok) {
@@ -57,6 +63,14 @@ export function SalesPOS() {
           setProducts(data.products.filter((p: any) => p.quantity > 0))
         }
         if (catRes.ok) setCategories(await catRes.json())
+        if (settingsRes.ok) {
+          const settings = await settingsRes.json()
+          setShopSettings({
+            shopName: settings.shopName || 'Trendz',
+            receiptFooter: settings.receiptFooter || 'Thank you for shopping with us!',
+            currency: settings.currency || 'KES',
+          })
+        }
       } catch {}
     }
     load()
@@ -135,6 +149,13 @@ export function SalesPOS() {
       setDiscount(0)
       setReceiptDialog(true)
       toast.success('Sale completed!')
+
+      // Refresh products to update stock
+      const prodRes = await authFetch('/api/inventory?limit=100')
+      if (prodRes.ok) {
+        const prodData = await prodRes.json()
+        setProducts(prodData.products.filter((p: any) => p.quantity > 0))
+      }
     } catch {
       toast.error('Failed to complete sale')
     }
@@ -158,24 +179,34 @@ export function SalesPOS() {
           </Select>
         </div>
         <ScrollArea className="h-[calc(100vh-16rem)]">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pr-4">
-            {filtered.map((product) => (
-              <Card
-                key={product.id}
-                className="cursor-pointer hover:ring-2 hover:ring-purple-400 transition-all"
-                onClick={() => addToCart(product)}
-              >
-                <CardContent className="p-3">
-                  <p className="font-medium text-sm truncate">{product.name}</p>
-                  <p className="text-xs text-muted-foreground">{product.category?.name}</p>
-                  <div className="flex justify-between items-center mt-2">
-                    <span className="font-bold text-sm">KES {product.sellingPrice.toLocaleString()}</span>
-                    <Badge variant="outline" className="text-xs">{product.quantity} left</Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          {filtered.length === 0 ? (
+            <div className="flex items-center justify-center h-64 text-muted-foreground">
+              <div className="text-center">
+                <Package className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p>No products available</p>
+                <p className="text-xs mt-1">Add products to inventory to start selling</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pr-4">
+              {filtered.map((product) => (
+                <Card
+                  key={product.id}
+                  className="cursor-pointer hover:ring-2 hover:ring-purple-400 transition-all"
+                  onClick={() => addToCart(product)}
+                >
+                  <CardContent className="p-3">
+                    <p className="font-medium text-sm truncate">{product.name}</p>
+                    <p className="text-xs text-muted-foreground">{product.category?.name}</p>
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="font-bold text-sm">KES {product.sellingPrice.toLocaleString()}</span>
+                      <Badge variant="outline" className="text-xs">{product.quantity} left</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </ScrollArea>
       </div>
 
@@ -267,7 +298,7 @@ export function SalesPOS() {
           {lastSale && (
             <div className="space-y-3 text-sm">
               <div className="text-center">
-                <p className="font-bold text-lg">TRENDZ</p>
+                <p className="font-bold text-lg">{shopSettings.shopName.toUpperCase()}</p>
                 <p className="text-muted-foreground">Fashion & Beauty Store</p>
               </div>
               <Separator />
@@ -289,7 +320,7 @@ export function SalesPOS() {
               <div className="flex justify-between font-bold text-base"><span>Total</span><span>KES {lastSale.total?.toLocaleString()}</span></div>
               <p className="text-xs text-muted-foreground capitalize">Payment: {lastSale.paymentMethod}</p>
               <Separator />
-              <p className="text-center text-xs text-muted-foreground">Thank you for shopping with us!</p>
+              <p className="text-center text-xs text-muted-foreground">{shopSettings.receiptFooter}</p>
             </div>
           )}
         </DialogContent>

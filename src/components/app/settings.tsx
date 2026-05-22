@@ -17,7 +17,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { TrendzLogo } from './trendz-logo'
-import { Settings as SettingsIcon, Building2, Users, Shield, Package, ShoppingCart, BarChart3, Bell, Lock, Database, Palette, FileText, Info, Plus, Edit2, Trash2, Download, Upload } from 'lucide-react'
+import { Settings as SettingsIcon, Building2, Users, Shield, Package, ShoppingCart, BarChart3, Bell, Lock, Database, Palette, FileText, Info, Plus, Edit2, Trash2, Download, Upload, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function Settings() {
@@ -125,6 +125,18 @@ export function Settings() {
       } catch { toast.error('Invalid backup file') }
     }
     input.click()
+  }
+
+  const clearAllData = async () => {
+    if (!confirm('⚠️ WARNING: This will permanently delete ALL business data including products, sales, suppliers, notifications, and audit logs. User accounts and settings will be preserved.\n\nAre you sure you want to continue?')) return
+    if (!confirm('This action CANNOT be undone. Consider exporting a backup first.\n\nType "DELETE" in the next prompt to confirm.')) return
+    const confirmation = prompt('Type DELETE to confirm:')
+    if (confirmation !== 'DELETE') { toast.info('Data clear cancelled'); return }
+    try {
+      const res = await authFetch('/api/clear-data', { method: 'POST' })
+      if (res.ok) { toast.success('All business data cleared'); window.location.reload() }
+      else { const d = await res.json(); toast.error(d.error || 'Failed to clear data') }
+    } catch { toast.error('Failed to clear data') }
   }
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading settings...</div>
@@ -285,6 +297,20 @@ export function Settings() {
             <div className="flex gap-3">
               <Button onClick={exportBackup} className="bg-purple-600 hover:bg-purple-700 text-white"><Download className="h-4 w-4 mr-2" />Export Backup</Button>
               <Button variant="outline" onClick={importBackup}><Upload className="h-4 w-4 mr-2" />Restore Backup</Button>
+            </div>
+            <Separator />
+            <div className="p-4 border border-red-200 dark:border-red-900/50 rounded-lg bg-red-50/50 dark:bg-red-950/20">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="font-medium text-red-700 dark:text-red-400 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" /> Danger Zone
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">Clear all business data (products, sales, suppliers, notifications). User accounts and settings are preserved.</p>
+                </div>
+                <Button variant="destructive" size="sm" onClick={clearAllData}>
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Clear All Data
+                </Button>
+              </div>
             </div>
           </CardContent></Card>
         </TabsContent>

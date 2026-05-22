@@ -9,12 +9,13 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { TrendingUp, Plus, Calendar } from 'lucide-react'
+import { TrendingUp, Plus, Calendar, ShoppingCart, ArrowRight } from 'lucide-react'
 import { toast } from 'sonner'
 
 export function SalesTracking() {
   const user = useAppStore((s) => s.user)
   const authFetch = useAppStore((s) => s.authFetch)
+  const setCurrentPage = useAppStore((s) => s.setCurrentPage)
   const [entries, setEntries] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [addDialog, setAddDialog] = useState(false)
@@ -108,6 +109,20 @@ export function SalesTracking() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading...</div>
+          ) : entries.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground">
+              <ShoppingCart className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p className="font-medium">No sales recorded yet</p>
+              <p className="text-sm mt-1">Sales entries will appear here once you complete a sale through POS or add a manual entry.</p>
+              <Button
+                variant="outline"
+                className="mt-3"
+                onClick={() => setCurrentPage('sales-pos')}
+              >
+                <ShoppingCart className="h-4 w-4 mr-2" />
+                Go to Sales POS <ArrowRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -132,14 +147,6 @@ export function SalesTracking() {
                       <TableCell className="text-sm text-muted-foreground">{new Date(entry.date).toLocaleDateString()}</TableCell>
                     </TableRow>
                   ))}
-                  {entries.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        <TrendingUp className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        No entries found
-                      </TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
               </Table>
             </div>

@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { ensureDbSeeded } from '@/lib/seed'
 
 export async function POST(request: Request) {
   try {
-    await ensureDbSeeded()
     const { email, password } = await request.json()
 
     if (!email || !password) {
