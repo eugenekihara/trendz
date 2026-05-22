@@ -272,7 +272,7 @@ export function Inventory() {
             </Button>
           )}
           {user?.role === 'admin' && (
-            <Button onClick={() => openProductDialog()} className="bg-purple-600 hover:bg-purple-700 text-white">
+            <Button onClick={() => openProductDialog()} className="bg-amber-800 hover:bg-amber-900 text-white">
               <Plus className="h-4 w-4 mr-2" /> Add Product
             </Button>
           )}
@@ -419,7 +419,7 @@ export function Inventory() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setProductDialog(false)}>Cancel</Button>
-            <Button onClick={saveProduct} className="bg-purple-600 hover:bg-purple-700 text-white">
+            <Button onClick={saveProduct} className="bg-amber-800 hover:bg-amber-900 text-white">
               {editingProduct ? 'Update' : 'Create'} Product
             </Button>
           </DialogFooter>
@@ -437,7 +437,7 @@ export function Inventory() {
             <div className="flex gap-2">
               <Input placeholder="Category name" value={catForm.name} onChange={(e) => setCatForm({ ...catForm, name: e.target.value })} />
               <Input placeholder="Description" value={catForm.description} onChange={(e) => setCatForm({ ...catForm, description: e.target.value })} className="flex-1" />
-              <Button onClick={saveCategory} className="bg-purple-600 hover:bg-purple-700 text-white shrink-0">
+              <Button onClick={saveCategory} className="bg-amber-800 hover:bg-amber-900 text-white shrink-0">
                 {editingCategory ? 'Update' : 'Add'}
               </Button>
               {editingCategory && (

@@ -84,8 +84,8 @@ export function Reports() {
         <Card>
           <CardContent className="p-8 text-center">
             <div className="max-w-md mx-auto space-y-4">
-              <div className="p-4 bg-purple-50 dark:bg-purple-950/30 rounded-full w-fit mx-auto">
-                <BarChart3 className="h-10 w-10 text-purple-600" />
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/30 rounded-full w-fit mx-auto">
+                <BarChart3 className="h-10 w-10 text-amber-700" />
               </div>
               <h3 className="text-lg font-semibold">No Reports Available</h3>
               <p className="text-sm text-muted-foreground">
@@ -95,7 +95,7 @@ export function Reports() {
                 <Button variant="outline" onClick={() => setCurrentPage('inventory')}>
                   <Package className="h-4 w-4 mr-2" /> Add Products
                 </Button>
-                <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={() => setCurrentPage('sales-pos')}>
+                <Button className="bg-amber-800 hover:bg-amber-900 text-white" onClick={() => setCurrentPage('sales-pos')}>
                   <ShoppingCart className="h-4 w-4 mr-2" /> Make a Sale
                 </Button>
               </div>
@@ -127,7 +127,7 @@ export function Reports() {
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip formatter={(v: number) => [`KES ${v.toLocaleString()}`, 'Sales']} />
-                      <Line type="monotone" dataKey="total" stroke="#9333ea" strokeWidth={2} />
+                      <Line type="monotone" dataKey="total" stroke="#92400e" strokeWidth={2} />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
@@ -154,7 +154,7 @@ export function Reports() {
                       <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip />
-                      <Bar dataKey="products" fill="#e11d48" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="products" fill="#b45309" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (

@@ -19,6 +19,7 @@ export const metadata: Metadata = {
   description: "Modern stock management system for fashion and beauty businesses",
   icons: {
     icon: "/favicon.ico",
+    apple: "/logo.png",
   },
 }
 

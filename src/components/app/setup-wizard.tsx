@@ -93,7 +93,7 @@ export function SetupWizard() {
   ]
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-rose-50 dark:from-gray-950 dark:via-gray-900 dark:to-purple-950 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-gray-950 dark:via-gray-900 dark:to-amber-950 p-4">
       <div className="w-full max-w-lg">
         {/* Logo */}
         <div className="text-center mb-6">
@@ -109,13 +109,13 @@ export function SetupWizard() {
             <div key={i} className="flex items-center gap-2">
               <div className={`flex items-center justify-center h-8 w-8 rounded-full text-xs font-medium transition-all ${
                 i <= step
-                  ? 'bg-purple-600 text-white'
+                  ? 'bg-amber-800 text-white'
                   : 'bg-muted text-muted-foreground'
               }`}>
                 {i < step ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
               </div>
               {i < steps.length - 1 && (
-                <div className={`w-8 h-0.5 ${i < step ? 'bg-purple-600' : 'bg-muted'}`} />
+                <div className={`w-8 h-0.5 ${i < step ? 'bg-amber-800' : 'bg-muted'}`} />
               )}
             </div>
           ))}
@@ -135,8 +135,8 @@ export function SetupWizard() {
             {/* Step 0: Welcome */}
             {step === 0 && (
               <div className="text-center space-y-4 py-4">
-                <div className="p-6 bg-purple-50 dark:bg-purple-950/30 rounded-xl">
-                  <Store className="h-12 w-12 mx-auto text-purple-600 mb-3" />
+                <div className="p-6 bg-amber-50 dark:bg-amber-950/30 rounded-xl">
+                  <Store className="h-12 w-12 mx-auto text-amber-700 mb-3" />
                   <h3 className="text-lg font-semibold">Welcome to Trendz!</h3>
                   <p className="text-sm text-muted-foreground mt-2">
                     Let&apos;s set up your fashion &amp; beauty store management system.
@@ -277,7 +277,7 @@ export function SetupWizard() {
                 <Button
                   onClick={handleNext}
                   disabled={loading}
-                  className="bg-gradient-to-r from-purple-600 to-rose-500 hover:from-purple-700 hover:to-rose-600 text-white"
+                  className="bg-gradient-to-r from-amber-800 to-amber-600 hover:from-amber-900 hover:to-amber-700 text-white"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">

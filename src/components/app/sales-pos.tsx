@@ -192,7 +192,7 @@ export function SalesPOS() {
               {filtered.map((product) => (
                 <Card
                   key={product.id}
-                  className="cursor-pointer hover:ring-2 hover:ring-purple-400 transition-all"
+                  className="cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
                   onClick={() => addToCart(product)}
                 >
                   <CardContent className="p-3">

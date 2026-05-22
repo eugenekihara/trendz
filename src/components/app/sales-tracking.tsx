@@ -99,7 +99,7 @@ export function SalesTracking() {
         </div>
         <Button variant="outline" size="sm" onClick={() => { setStartDate(''); setEndDate('') }}>Clear</Button>
         <div className="flex-1" />
-        <Button onClick={() => setAddDialog(true)} className="bg-purple-600 hover:bg-purple-700 text-white">
+        <Button onClick={() => setAddDialog(true)} className="bg-amber-800 hover:bg-amber-900 text-white">
           <Plus className="h-4 w-4 mr-2" /> Manual Entry
         </Button>
       </div>
@@ -182,7 +182,7 @@ export function SalesTracking() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialog(false)}>Cancel</Button>
-            <Button onClick={addEntry} className="bg-purple-600 hover:bg-purple-700 text-white">Add Entry</Button>
+            <Button onClick={addEntry} className="bg-amber-800 hover:bg-amber-900 text-white">Add Entry</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

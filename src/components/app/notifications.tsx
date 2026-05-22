@@ -20,7 +20,7 @@ const typeColors: Record<string, string> = {
   low_stock: 'text-yellow-600 bg-yellow-50 dark:bg-yellow-950',
   sale: 'text-green-600 bg-green-50 dark:bg-green-950',
   info: 'text-blue-600 bg-blue-50 dark:bg-blue-950',
-  system: 'text-purple-600 bg-purple-50 dark:bg-purple-950',
+  system: 'text-amber-700 bg-amber-50 dark:bg-amber-950',
 }
 
 export function Notifications() {
@@ -83,7 +83,7 @@ export function Notifications() {
               const Icon = typeIcons[n.type] || Bell
               const color = typeColors[n.type] || 'text-gray-600 bg-gray-50'
               return (
-                <Card key={n.id} className={`transition-all ${!n.read ? 'border-l-4 border-l-purple-500' : 'opacity-75'}`}>
+                <Card key={n.id} className={`transition-all ${!n.read ? 'border-l-4 border-l-amber-600' : 'opacity-75'}`}>
                   <CardContent className="p-3 flex items-start gap-3">
                     <div className={`p-2 rounded-full ${color}`}>
                       <Icon className="h-4 w-4" />

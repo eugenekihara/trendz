@@ -189,7 +189,7 @@ export function Settings() {
         {/* Users & Staff */}
         <TabsContent value="users">
           <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle>Users & Staff</CardTitle>
-            <Button onClick={() => openUserDialog()} className="bg-purple-600 hover:bg-purple-700 text-white"><Plus className="h-4 w-4 mr-2" />Add User</Button></CardHeader>
+            <Button onClick={() => openUserDialog()} className="bg-amber-800 hover:bg-amber-900 text-white"><Plus className="h-4 w-4 mr-2" />Add User</Button></CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
@@ -197,7 +197,7 @@ export function Settings() {
                 <TableBody>
                   {users.map((u) => (
                     <TableRow key={u.id}>
-                      <TableCell><div className="flex items-center gap-2"><Avatar className="h-7 w-7"><AvatarFallback className="text-xs bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">{u.name?.split(' ').map((n:string) => n[0]).join('')}</AvatarFallback></Avatar>{u.name}</div></TableCell>
+                      <TableCell><div className="flex items-center gap-2"><Avatar className="h-7 w-7"><AvatarFallback className="text-xs bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">{u.name?.split(' ').map((n:string) => n[0]).join('')}</AvatarFallback></Avatar>{u.name}</div></TableCell>
                       <TableCell>{u.email}</TableCell>
                       <TableCell><Badge variant="outline" className="capitalize">{u.role}</Badge></TableCell>
                       <TableCell><Badge className={u.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>{u.active ? 'Active' : 'Inactive'}</Badge></TableCell>
@@ -295,7 +295,7 @@ export function Settings() {
             </div>
             <Separator />
             <div className="flex gap-3">
-              <Button onClick={exportBackup} className="bg-purple-600 hover:bg-purple-700 text-white"><Download className="h-4 w-4 mr-2" />Export Backup</Button>
+              <Button onClick={exportBackup} className="bg-amber-800 hover:bg-amber-900 text-white"><Download className="h-4 w-4 mr-2" />Export Backup</Button>
               <Button variant="outline" onClick={importBackup}><Upload className="h-4 w-4 mr-2" />Restore Backup</Button>
             </div>
             <Separator />
@@ -387,7 +387,7 @@ export function Settings() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUserDialog(false)}>Cancel</Button>
-            <Button onClick={saveUser} className="bg-purple-600 hover:bg-purple-700 text-white">Save</Button>
+            <Button onClick={saveUser} className="bg-amber-800 hover:bg-amber-900 text-white">Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

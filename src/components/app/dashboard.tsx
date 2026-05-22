@@ -26,7 +26,7 @@ interface DashboardData {
   dailySales: { date: string; total: number }[]
 }
 
-const COLORS = ['#9333ea', '#e11d48', '#f97316', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6']
+const COLORS = ['#92400e', '#b45309', '#d97706', '#f59e0b', '#78350f', '#a16207', '#ca8a04', '#854d0e']
 
 export function Dashboard() {
   const authFetch = useAppStore((s) => s.authFetch)
@@ -74,7 +74,7 @@ export function Dashboard() {
 
   const statCards = [
     { title: 'Total Revenue', value: `KES ${stats.totalRevenue.toLocaleString()}`, sub: `KES ${stats.monthRevenue.toLocaleString()} this month`, icon: TrendingUp, color: 'text-green-600' },
-    { title: 'Total Sales', value: stats.totalSales, sub: `${stats.monthSales} this month`, icon: ShoppingCart, color: 'text-purple-600' },
+    { title: 'Total Sales', value: stats.totalSales, sub: `${stats.monthSales} this month`, icon: ShoppingCart, color: 'text-amber-700' },
     { title: 'Products', value: stats.totalProducts, sub: `${stats.lowStockProducts} low stock`, icon: Package, color: 'text-blue-600' },
     { title: 'Categories', value: stats.totalCategories, sub: `${stats.totalSuppliers} suppliers`, icon: Truck, color: 'text-orange-600' },
   ]
@@ -111,8 +111,8 @@ export function Dashboard() {
         <Card>
           <CardContent className="p-8 text-center">
             <div className="max-w-md mx-auto space-y-4">
-              <div className="p-4 bg-purple-50 dark:bg-purple-950/30 rounded-full w-fit mx-auto">
-                <BarChart3 className="h-10 w-10 text-purple-600" />
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/30 rounded-full w-fit mx-auto">
+                <BarChart3 className="h-10 w-10 text-amber-700" />
               </div>
               <h3 className="text-lg font-semibold">Welcome to Your Dashboard</h3>
               <p className="text-sm text-muted-foreground">
@@ -121,7 +121,7 @@ export function Dashboard() {
               </p>
               <Button
                 onClick={() => setCurrentPage('inventory')}
-                className="bg-purple-600 hover:bg-purple-700 text-white"
+                className="bg-amber-800 hover:bg-amber-900 text-white"
               >
                 <Package className="h-4 w-4 mr-2" />
                 Add Your First Product
@@ -149,7 +149,7 @@ export function Dashboard() {
                       <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip formatter={(value: number) => [`KES ${value.toLocaleString()}`, 'Sales']} />
-                      <Bar dataKey="total" fill="#9333ea" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="total" fill="#92400e" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (

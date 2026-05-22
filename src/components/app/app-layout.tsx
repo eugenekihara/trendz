@@ -85,7 +85,7 @@ function SidebarContent({ onClose, notifCount }: SidebarContentProps) {
                 variant={isActive ? 'secondary' : 'ghost'}
                 className={`w-full justify-start gap-3 h-10 ${
                   isActive
-                    ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-medium'
+                    ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-medium'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
                 onClick={() => {
@@ -112,7 +112,7 @@ function SidebarContent({ onClose, notifCount }: SidebarContentProps) {
       <div className="p-3">
         <div className="flex items-center gap-3 p-2">
           <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 text-xs">
+            <AvatarFallback className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-xs">
               {user?.name?.split(' ').map((n) => n[0]).join('') || 'U'}
             </AvatarFallback>
           </Avatar>

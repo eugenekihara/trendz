@@ -66,7 +66,7 @@ export function Suppliers() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold">Suppliers</h2>
-        <Button onClick={() => openDialog()} className="bg-purple-600 hover:bg-purple-700 text-white">
+        <Button onClick={() => openDialog()} className="bg-amber-800 hover:bg-amber-900 text-white">
           <Plus className="h-4 w-4 mr-2" /> Add Supplier
         </Button>
       </div>
@@ -128,7 +128,7 @@ export function Suppliers() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialog(false)}>Cancel</Button>
-            <Button onClick={save} className="bg-purple-600 hover:bg-purple-700 text-white">Save</Button>
+            <Button onClick={save} className="bg-amber-800 hover:bg-amber-900 text-white">Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

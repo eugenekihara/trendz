@@ -43,7 +43,7 @@ export function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-rose-50 dark:from-gray-950 dark:via-gray-900 dark:to-purple-950 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-gray-950 dark:via-gray-900 dark:to-amber-950 p-4">
       <Card className="w-full max-w-md shadow-xl border-0">
         <CardHeader className="text-center pb-2">
           <div className="flex justify-center mb-4">
@@ -84,7 +84,7 @@ export function Login() {
             )}
             <Button
               type="submit"
-              className="w-full h-11 bg-gradient-to-r from-purple-600 to-rose-500 hover:from-purple-700 hover:to-rose-600 text-white"
+              className="w-full h-11 bg-gradient-to-r from-amber-800 to-amber-600 hover:from-amber-900 hover:to-amber-700 text-white"
               disabled={loading}
             >
               {loading ? (

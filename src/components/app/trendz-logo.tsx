@@ -1,6 +1,6 @@
 'use client'
 
-import { Gem } from 'lucide-react'
+import Image from 'next/image'
 
 interface TrendzLogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl'
@@ -8,10 +8,10 @@ interface TrendzLogoProps {
 }
 
 const sizeConfig = {
-  sm: { icon: 16, text: 'text-sm', gap: 'gap-1' },
-  md: { icon: 20, text: 'text-base', gap: 'gap-1.5' },
-  lg: { icon: 28, text: 'text-xl', gap: 'gap-2' },
-  xl: { icon: 40, text: 'text-3xl', gap: 'gap-3' },
+  sm: { img: 24, text: 'text-sm', gap: 'gap-1' },
+  md: { img: 32, text: 'text-base', gap: 'gap-1.5' },
+  lg: { img: 40, text: 'text-xl', gap: 'gap-2' },
+  xl: { img: 56, text: 'text-3xl', gap: 'gap-3' },
 }
 
 export function TrendzLogo({ size = 'md', showText = true }: TrendzLogoProps) {
@@ -19,15 +19,16 @@ export function TrendzLogo({ size = 'md', showText = true }: TrendzLogoProps) {
 
   return (
     <div className={`flex items-center ${config.gap}`}>
-      <div className="relative">
-        <Gem
-          size={config.icon}
-          className="text-purple-600 dark:text-purple-400"
-          strokeWidth={2.5}
-        />
-      </div>
+      <Image
+        src="/logo.png"
+        alt="Trendz Logo"
+        width={config.img}
+        height={config.img}
+        className="rounded-sm"
+        priority
+      />
       {showText && (
-        <span className={`font-bold ${config.text} tracking-wider bg-gradient-to-r from-purple-600 to-rose-500 bg-clip-text text-transparent`}>
+        <span className={`font-bold ${config.text} tracking-wider text-amber-800 dark:text-amber-400`}>
           TRENDZ
         </span>
       )}

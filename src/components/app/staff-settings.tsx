@@ -245,7 +245,7 @@ export function StaffSettings() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center text-muted-foreground">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-3" />
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-700 mx-auto mb-3" />
           <p>Loading your settings...</p>
         </div>
       </div>
@@ -266,7 +266,7 @@ export function StaffSettings() {
       <div className="flex items-center gap-4 mb-2">
         <Avatar className="h-16 w-16">
           <AvatarImage src={profile.avatar || undefined} />
-          <AvatarFallback className="bg-gradient-to-br from-purple-500 to-rose-500 text-white text-xl font-bold">
+          <AvatarFallback className="bg-gradient-to-br from-amber-700 to-amber-500 text-white text-xl font-bold">
             {getInitials(profile.name)}
           </AvatarFallback>
         </Avatar>
@@ -298,7 +298,7 @@ export function StaffSettings() {
               <div className="flex items-center gap-6">
                 <Avatar className="h-20 w-20">
                   <AvatarImage src={profileForm.avatar || undefined} />
-                  <AvatarFallback className="bg-gradient-to-br from-purple-500 to-rose-500 text-white text-2xl font-bold">
+                  <AvatarFallback className="bg-gradient-to-br from-amber-700 to-amber-500 text-white text-2xl font-bold">
                     {getInitials(profileForm.name || 'U')}
                   </AvatarFallback>
                 </Avatar>
@@ -354,7 +354,7 @@ export function StaffSettings() {
               </div>
 
               <div className="flex justify-end pt-2">
-                <Button onClick={saveProfile} disabled={saving} className="bg-purple-600 hover:bg-purple-700 text-white">
+                <Button onClick={saveProfile} disabled={saving} className="bg-amber-800 hover:bg-amber-900 text-white">
                   <Save className="h-4 w-4 mr-2" />
                   {saving ? 'Saving...' : 'Save Changes'}
                 </Button>
@@ -439,7 +439,7 @@ export function StaffSettings() {
                   <Button
                     onClick={changePassword}
                     disabled={changingPassword || !passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
-                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                    className="bg-amber-800 hover:bg-amber-900 text-white"
                   >
                     <Lock className="h-4 w-4 mr-2" />
                     {changingPassword ? 'Changing...' : 'Change Password'}
@@ -506,22 +506,22 @@ export function StaffSettings() {
                   <button
                     onClick={() => { setTheme('light'); saveAppearance('theme', 'light') }}
                     className={`p-4 rounded-lg border-2 transition-all flex flex-col items-center gap-2 ${
-                      theme === 'light' ? 'border-purple-600 bg-purple-50 dark:bg-purple-950' : 'border-muted hover:border-muted-foreground/30'
+                      theme === 'light' ? 'border-amber-700 bg-amber-50 dark:bg-amber-950' : 'border-muted hover:border-muted-foreground/30'
                     }`}
                   >
                     <Sun className="h-8 w-8 text-amber-500" />
                     <span className="text-sm font-medium">Light</span>
-                    {theme === 'light' && <CheckCircle2 className="h-4 w-4 text-purple-600" />}
+                    {theme === 'light' && <CheckCircle2 className="h-4 w-4 text-amber-700" />}
                   </button>
                   <button
                     onClick={() => { setTheme('dark'); saveAppearance('theme', 'dark') }}
                     className={`p-4 rounded-lg border-2 transition-all flex flex-col items-center gap-2 ${
-                      theme === 'dark' ? 'border-purple-600 bg-purple-50 dark:bg-purple-950' : 'border-muted hover:border-muted-foreground/30'
+                      theme === 'dark' ? 'border-amber-700 bg-amber-50 dark:bg-amber-950' : 'border-muted hover:border-muted-foreground/30'
                     }`}
                   >
                     <Moon className="h-8 w-8 text-blue-500" />
                     <span className="text-sm font-medium">Dark</span>
-                    {theme === 'dark' && <CheckCircle2 className="h-4 w-4 text-purple-600" />}
+                    {theme === 'dark' && <CheckCircle2 className="h-4 w-4 text-amber-700" />}
                   </button>
                 </div>
               </div>
@@ -646,7 +646,7 @@ export function StaffSettings() {
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <BarChart3 className="h-4 w-4 text-purple-600" />
+                    <BarChart3 className="h-4 w-4 text-amber-700" />
                     <p className="text-xs text-muted-foreground">Average Sale</p>
                   </div>
                   <p className="text-xl font-bold">KES {salesData?.summary?.avgSale?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0}</p>
@@ -681,8 +681,8 @@ export function StaffSettings() {
               </CardHeader>
               <CardContent>
                 <div className="flex gap-4">
-                  <div className="flex-1 p-3 bg-purple-50 dark:bg-purple-950 rounded-lg text-center">
-                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">{salesData?.summary?.posCount || 0}</p>
+                  <div className="flex-1 p-3 bg-amber-50 dark:bg-amber-950 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-amber-800 dark:text-amber-300">{salesData?.summary?.posCount || 0}</p>
                     <p className="text-xs text-muted-foreground">POS Sales</p>
                   </div>
                   <div className="flex-1 p-3 bg-rose-50 dark:bg-rose-950 rounded-lg text-center">
@@ -710,7 +710,7 @@ export function StaffSettings() {
                           name === 'amount' ? `KES ${value.toLocaleString()}` : value,
                           name === 'amount' ? 'Amount' : 'Count'
                         ]} />
-                        <Bar dataKey="amount" fill="#9333ea" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="amount" fill="#92400e" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   ) : (
@@ -749,7 +749,7 @@ export function StaffSettings() {
                             <Badge
                               variant="outline"
                               className={`text-xs capitalize ${
-                                entry.source === 'pos' ? 'border-purple-300 text-purple-700 dark:text-purple-300' : 'border-rose-300 text-rose-700 dark:text-rose-300'
+                                entry.source === 'pos' ? 'border-amber-300 text-amber-800 dark:text-amber-300' : 'border-orange-300 text-orange-700 dark:text-orange-300'
                               }`}
                             >
                               {entry.source}
@@ -778,7 +778,7 @@ export function StaffSettings() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-gradient-to-br from-purple-50 to-rose-50 dark:from-purple-950 dark:to-rose-950 rounded-lg">
+                  <div className="p-4 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950 dark:to-orange-950 rounded-lg">
                     <p className="text-sm text-muted-foreground mb-1">Sales Today</p>
                     <p className="text-2xl font-bold">{salesData?.summary?.todaySales || 0}</p>
                     <p className="text-xs text-muted-foreground mt-1">KES {salesData?.summary?.todayAmount?.toLocaleString() || 0}</p>
