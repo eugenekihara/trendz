@@ -49,7 +49,7 @@ export async function POST(request: Request) {
       },
     })
 
-    return NextResponse.json(supplier)
+    return NextResponse.json(supplier, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Suppliers POST error:', error)
     return NextResponse.json({ error: 'Failed to create supplier' }, { status: 500 })

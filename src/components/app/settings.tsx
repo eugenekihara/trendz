@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useAppStore } from '@/store'
+import { useState, useEffect, useCallback } from 'react'
+import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,11 +17,19 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { TrendzLogo } from './trendz-logo'
-import { Settings as SettingsIcon, Building2, Users, Shield, Package, ShoppingCart, BarChart3, Bell, Lock, Database, Palette, FileText, Info, Plus, Edit2, Trash2, Download, Upload, AlertTriangle } from 'lucide-react'
+import { Settings as SettingsIcon, Building2, Users, Shield, Package, ShoppingCart, BarChart3, Bell, Lock, Database, Palette, FileText, Info, Plus, Edit2, Trash2, Download, Upload, AlertTriangle, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+
+// Events that should trigger a Settings refresh
+const SETTINGS_REFRESH_EVENTS: DataChangeEvent[] = [
+  'user-changed',
+  'settings-changed',
+]
 
 export function Settings() {
   const authFetch = useAppStore((s) => s.authFetch)
+  const notifyDataChange = useAppStore((s) => s.notifyDataChange)
+  const onDataChange = useAppStore((s) => s.onDataChange)
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [users, setUsers] = useState<any[]>([])
   const [auditLogs, setAuditLogs] = useState<any[]>([])
@@ -29,27 +37,49 @@ export function Settings() {
   const [editingUser, setEditingUser] = useState<any>(null)
   const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'staff', phone: '' })
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const loadAll = useCallback(async (showRefresh = false) => {
+    try {
+      if (showRefresh) setRefreshing(true)
+      const [settingsRes, usersRes, logsRes] = await Promise.all([
+        authFetch('/api/settings'),
+        authFetch('/api/users'),
+        authFetch('/api/audit-logs'),
+      ])
+      if (settingsRes.ok) setSettings(await settingsRes.json())
+      if (usersRes.ok) setUsers(await usersRes.json())
+      if (logsRes.ok) setAuditLogs(await logsRes.json())
+    } catch {
+      toast.error('Failed to load settings')
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [authFetch])
 
   useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        const [settingsRes, usersRes, logsRes] = await Promise.all([
-          authFetch('/api/settings'),
-          authFetch('/api/users'),
-          authFetch('/api/audit-logs'),
-        ])
-        if (cancelled) return
-        if (settingsRes.ok) setSettings(await settingsRes.json())
-        if (usersRes.ok) setUsers(await usersRes.json())
-        if (logsRes.ok) setAuditLogs(await logsRes.json())
-      } catch {} finally {
-        if (!cancelled) setLoading(false)
-      }
+    loadAll()
+  }, [loadAll])
+
+  // Refresh data when tab becomes visible (covers SPA navigation)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadAll()
     }
-    load()
-    return () => { cancelled = true }
-  }, [authFetch])
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [loadAll])
+
+  // Subscribe to cross-module data changes for instant refresh
+  useEffect(() => {
+    const unsubscribe = onDataChange((event: DataChangeEvent) => {
+      if (SETTINGS_REFRESH_EVENTS.includes(event)) {
+        loadAll()
+      }
+    })
+    return unsubscribe
+  }, [onDataChange, loadAll])
 
   const updateSetting = async (key: string, value: string) => {
     try {
@@ -57,6 +87,8 @@ export function Settings() {
       if (res.ok) {
         setSettings({ ...settings, [key]: value })
         toast.success('Setting updated')
+        // Notify all other modules about settings change (currency, shop name, receipt footer, etc.)
+        notifyDataChange('settings-changed')
       }
     } catch { toast.error('Failed to update') }
   }
@@ -83,6 +115,8 @@ export function Settings() {
       // Reload users
       const usersRes2 = await authFetch('/api/users')
       if (usersRes2.ok) setUsers(await usersRes2.json())
+      // Notify all other modules about user change
+      notifyDataChange('user-changed')
     } catch { toast.error('Failed to save user') }
   }
 
@@ -90,9 +124,15 @@ export function Settings() {
     if (!confirm('Delete this user?')) return
     try {
       const res = await authFetch(`/api/users/${id}`, { method: 'DELETE' })
-      if (res.ok) { toast.success('User deleted'); const usersRes2 = await authFetch('/api/users'); if (usersRes2.ok) setUsers(await usersRes2.json()) }
+      if (res.ok) {
+        toast.success('User deleted')
+        const usersRes2 = await authFetch('/api/users')
+        if (usersRes2.ok) setUsers(await usersRes2.json())
+        // Notify all other modules about user change
+        notifyDataChange('user-changed')
+      }
       else { const d = await res.json(); toast.error(d.error) }
-    } catch {}
+    } catch { toast.error('Failed to delete user') }
   }
 
   const exportBackup = async () => {
@@ -120,7 +160,16 @@ export function Settings() {
         const text = await file.text()
         const data = JSON.parse(text)
         const res = await authFetch('/api/backup', { method: 'POST', body: JSON.stringify(data) })
-        if (res.ok) { toast.success('Backup restored'); window.location.reload() }
+        if (res.ok) {
+          toast.success('Backup restored')
+          // Notify all modules that everything has changed
+          notifyDataChange('settings-changed')
+          notifyDataChange('user-changed')
+          notifyDataChange('inventory-changed')
+          notifyDataChange('supplier-changed')
+          notifyDataChange('category-changed')
+          window.location.reload()
+        }
         else toast.error('Restore failed')
       } catch { toast.error('Invalid backup file') }
     }
@@ -134,7 +183,16 @@ export function Settings() {
     if (confirmation !== 'DELETE') { toast.info('Data clear cancelled'); return }
     try {
       const res = await authFetch('/api/clear-data', { method: 'POST' })
-      if (res.ok) { toast.success('All business data cleared'); window.location.reload() }
+      if (res.ok) {
+        toast.success('All business data cleared')
+        // Notify all modules that everything has changed
+        notifyDataChange('settings-changed')
+        notifyDataChange('inventory-changed')
+        notifyDataChange('supplier-changed')
+        notifyDataChange('category-changed')
+        notifyDataChange('sale-created') // triggers refresh of sales-related views
+        window.location.reload()
+      }
       else { const d = await res.json(); toast.error(d.error || 'Failed to clear data') }
     } catch { toast.error('Failed to clear data') }
   }
@@ -163,10 +221,14 @@ export function Settings() {
 
         {/* Business Settings */}
         <TabsContent value="business">
-          <Card><CardHeader><CardTitle>Business Settings</CardTitle></CardHeader>
+          <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle>Business Settings</CardTitle>
+            <Button variant="outline" size="icon" onClick={() => loadAll(true)} disabled={refreshing} title="Refresh">
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </Button>
+          </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Shop Name</Label><Input value={settings.shopName || ''} onChange={(e) => updateSetting('shopName', e.target.value)} onBlur={() => updateSetting('shopName', settings.shopName)} /></div>
+              <div className="space-y-2"><Label>Shop Name</Label><Input value={settings.shopName || ''} onChange={(e) => setSettings({...settings, shopName: e.target.value})} onBlur={() => updateSetting('shopName', settings.shopName)} /></div>
               <div className="space-y-2"><Label>Currency</Label><Input value={settings.currency || ''} onChange={(e) => setSettings({...settings, currency: e.target.value})} onBlur={() => updateSetting('currency', settings.currency)} /></div>
               <div className="space-y-2"><Label>Business Phone</Label><Input value={settings.businessPhone || ''} onChange={(e) => setSettings({...settings, businessPhone: e.target.value})} onBlur={() => updateSetting('businessPhone', settings.businessPhone)} /></div>
               <div className="space-y-2"><Label>Business Email</Label><Input value={settings.businessEmail || ''} onChange={(e) => setSettings({...settings, businessEmail: e.target.value})} onBlur={() => updateSetting('businessEmail', settings.businessEmail)} /></div>

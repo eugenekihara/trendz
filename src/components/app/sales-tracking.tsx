@@ -20,6 +20,7 @@ const SALES_TRACKING_EVENTS: DataChangeEvent[] = [
   'product-deleted',
   'inventory-changed',   // stock changes could affect context
   'manual-entry-created',
+  'settings-changed',    // currency/format changes
 ]
 
 export function SalesTracking() {
@@ -29,7 +30,7 @@ export function SalesTracking() {
   const notifyDataChange = useAppStore((s) => s.notifyDataChange)
   const onDataChange = useAppStore((s) => s.onDataChange)
   const [entries, setEntries] = useState<any[]>([])
-  const [summary, setSummary] = useState({ totalAmount: 0, totalQuantity: 0, totalEntries: 0 })
+  const [summary, setSummary] = useState({ totalAmount: 0, totalQuantity: 0, totalEntries: 0, posAmount: 0, posCount: 0, manualAmount: 0, manualCount: 0 })
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [addDialog, setAddDialog] = useState(false)
@@ -110,7 +111,13 @@ export function SalesTracking() {
   return (
     <div className="space-y-4">
       {/* Summary — uses server-computed totals, not affected by pagination */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Total Amount</p>
+            <p className="text-2xl font-bold">KES {summary.totalAmount.toLocaleString()}</p>
+          </CardContent>
+        </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Entries</p>
@@ -125,8 +132,16 @@ export function SalesTracking() {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">Total Amount</p>
-            <p className="text-2xl font-bold">KES {summary.totalAmount.toLocaleString()}</p>
+            <p className="text-sm text-muted-foreground text-amber-700">POS Sales</p>
+            <p className="text-xl font-bold">KES {summary.posAmount.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">{summary.posCount} entries</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground text-orange-600">Manual Entries</p>
+            <p className="text-xl font-bold">KES {summary.manualAmount.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">{summary.manualCount} entries</p>
           </CardContent>
         </Card>
       </div>

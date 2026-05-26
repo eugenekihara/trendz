@@ -110,7 +110,7 @@ export async function GET(request: Request) {
     ])
 
     // ─── Manual sales entries in the same period ───
-    const [manualTotal, manualRevenue, manualSalesByDay] = await Promise.all([
+    const [manualTotal, manualRevenue, manualSalesByDay, manualItemsSold] = await Promise.all([
       db.salesEntry.count({ where: { source: 'manual', ...entryDateFilter } }),
       db.salesEntry.aggregate({
         _sum: { amount: true },
@@ -120,13 +120,19 @@ export async function GET(request: Request) {
         where: { source: 'manual', ...entryDateFilter },
         select: { date: true, amount: true },
       }),
+      // Include manual entry quantities in total items sold for consistency
+      db.salesEntry.aggregate({
+        _sum: { quantity: true },
+        where: { source: 'manual', ...entryDateFilter },
+      }),
     ])
 
     // ─── Combined totals ───
     const totalSales = posTotalSales + manualTotal
     const totalRevenue = (posTotalRevenue._sum.total || 0) + (manualRevenue._sum.amount || 0)
     const totalDiscount = posTotalRevenue._sum.discount || 0
-    const totalItemsSold = posTotalItemsSold._sum.quantity || 0
+    // Include manual entry quantities for consistency with totalSales and totalRevenue
+    const totalItemsSold = (posTotalItemsSold._sum.quantity || 0) + (manualItemsSold._sum.quantity || 0)
 
     // ─── Process daily sales (POS + manual combined) ───
     const dailySalesMap: Record<string, number> = {}
@@ -162,11 +168,54 @@ export async function GET(request: Request) {
       count: item._count,
     }))
 
-    // ─── Category breakdown (active products, date-aware via sales data) ───
-    const categoryBreakdown = await db.category.findMany({
+    // ─── Category breakdown — period-aware via sales data ───
+    // Get category sales from POS items in the period
+    const categorySalesData = await db.saleItem.findMany({
+      where: { sale: saleDateFilter },
+      include: {
+        product: {
+          select: {
+            categoryId: true,
+            category: { select: { id: true, name: true } },
+          },
+        },
+      },
+    })
+
+    // Build category sales map
+    const categorySalesMap: Record<string, { name: string; revenue: number; itemsSold: number; productIds: Set<string> }> = {}
+    for (const item of categorySalesData) {
+      const catId = item.product?.categoryId
+      const catName = item.product?.category?.name
+      if (!catId || !catName) continue
+      if (!categorySalesMap[catId]) {
+        categorySalesMap[catId] = { name: catName, revenue: 0, itemsSold: 0, productIds: new Set() }
+      }
+      categorySalesMap[catId].revenue += item.total || 0
+      categorySalesMap[catId].itemsSold += item.quantity || 0
+      if (item.productId) categorySalesMap[catId].productIds.add(item.productId)
+    }
+
+    // Also get current product counts per category for context
+    const currentCategoryData = await db.category.findMany({
       include: {
         _count: { select: { products: { where: { active: true } } } },
       },
+    })
+
+    // Merge: combine period sales data with current product counts
+    const categoryBreakdown = currentCategoryData.map(cat => {
+      const salesData = categorySalesMap[cat.id]
+      return {
+        id: cat.id,
+        name: cat.name,
+        description: cat.description,
+        _count: { products: cat._count.products },
+        // Period-aware sales data
+        periodRevenue: salesData?.revenue || 0,
+        periodItemsSold: salesData?.itemsSold || 0,
+        periodProductsSold: salesData?.productIds.size || 0,
+      }
     })
 
     const result = {
@@ -179,6 +228,11 @@ export async function GET(request: Request) {
         totalDiscount,
         totalItemsSold,
         averageSale: totalSales > 0 ? totalRevenue / totalSales : 0,
+        // Source breakdown for transparency and alignment with Sales Tracking
+        posSales: posTotalSales,
+        posRevenue: posTotalRevenue._sum.total || 0,
+        manualSales: manualTotal,
+        manualRevenue: manualRevenue._sum.amount || 0,
       },
       dailySales,
       topProducts: topProductsWithDetails,

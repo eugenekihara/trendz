@@ -138,13 +138,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
   const sidebarOpen = useAppStore((s) => s.sidebarOpen)
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen)
+  const authFetch = useAppStore((s) => s.authFetch)
   const [notifCount, setNotifCount] = useState(0)
   const notifCountRef = useRef(0)
 
   useEffect(() => {
     const fetchNotifCount = async () => {
       try {
-        const res = await fetch('/api/notifications')
+        const res = await authFetch('/api/notifications')
         if (res.ok) {
           const data = await res.json()
           const count = data.filter((n: any) => !n.read).length
@@ -157,7 +158,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     fetchNotifCount()
     const interval = setInterval(fetchNotifCount, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [authFetch])
 
   return (
     <div className="min-h-screen flex bg-background">

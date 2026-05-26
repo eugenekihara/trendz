@@ -19,6 +19,10 @@ interface ReportData {
     totalDiscount: number
     totalItemsSold: number
     averageSale: number
+    posSales: number
+    posRevenue: number
+    manualSales: number
+    manualRevenue: number
   }
   dailySales: { date: string; total: number }[]
   topProducts: any[]
@@ -44,6 +48,8 @@ const REPORTS_REFRESH_EVENTS: DataChangeEvent[] = [
   'inventory-changed',
   'category-changed',
   'manual-entry-created',
+  'supplier-changed',   // supplier-related report data
+  'settings-changed',   // currency/format changes
 ]
 
 export function Reports() {
@@ -136,10 +142,15 @@ export function Reports() {
     total: p.total,
   }))
 
-  // Category bar chart data
+  // Category bar chart data — use period revenue when available, fallback to product count
   const categoryChartData = categoryBreakdown
-    .map((c: any) => ({ name: c.name, products: c._count?.products || 0 }))
-    .filter((c: any) => c.products > 0)
+    .map((c: any) => ({
+      name: c.name,
+      revenue: c.periodRevenue || 0,
+      itemsSold: c.periodItemsSold || 0,
+      products: c._count?.products || 0,
+    }))
+    .filter((c: any) => c.products > 0 || c.revenue > 0)
 
   return (
     <div className="space-y-4">
@@ -254,27 +265,27 @@ export function Reports() {
             </CardContent>
           </Card>
 
-          {/* Inventory by Category */}
+          {/* Sales by Category (period-aware) */}
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-base">Inventory by Category</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-base">Sales by Category</CardTitle></CardHeader>
             <CardContent>
               <div className="h-64">
-                {hasProductData ? (
+                {categoryChartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={categoryChartData}>
                       <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                       <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Bar dataKey="products" fill="#b45309" radius={[4, 4, 0, 0]} />
+                      <Tooltip formatter={(v: number, name: string) => [name === 'revenue' ? `KES ${v.toLocaleString()}` : v, name === 'revenue' ? 'Revenue' : 'Items Sold']} />
+                      <Bar dataKey="revenue" fill="#92400e" radius={[4, 4, 0, 0]} name="Revenue" />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
                     <div className="text-center">
                       <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p>No inventory data available</p>
-                      <p className="text-xs mt-1">Add products to see category distribution</p>
+                      <p>No category sales data for this period</p>
+                      <p className="text-xs mt-1">Category revenue will appear once you make sales</p>
                     </div>
                   </div>
                 )}

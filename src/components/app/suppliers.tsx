@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useAppStore } from '@/store'
+import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,27 +10,59 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { Truck, Plus, Edit2, Trash2 } from 'lucide-react'
+import { Truck, Plus, Edit2, Trash2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+
+// Events that should trigger a Suppliers refresh
+const SUPPLIER_REFRESH_EVENTS: DataChangeEvent[] = [
+  'supplier-changed',
+  'settings-changed',
+]
 
 export function Suppliers() {
   const authFetch = useAppStore((s) => s.authFetch)
+  const notifyDataChange = useAppStore((s) => s.notifyDataChange)
+  const onDataChange = useAppStore((s) => s.onDataChange)
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [dialog, setDialog] = useState(false)
   const [editing, setEditing] = useState<any>(null)
   const [form, setForm] = useState({ name: '', email: '', phone: '', address: '', city: '', country: '', notes: '' })
 
-  const fetchSuppliers = useCallback(async () => {
+  const fetchSuppliers = useCallback(async (showRefresh = false) => {
     try {
+      if (showRefresh) setRefreshing(true)
       const res = await authFetch('/api/suppliers')
       if (res.ok) setSuppliers(await res.json())
-    } catch {} finally {
+    } catch {
+      toast.error('Failed to fetch suppliers')
+    } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }, [authFetch])
 
   useEffect(() => { fetchSuppliers() }, [fetchSuppliers])
+
+  // Refresh data when tab becomes visible (covers SPA navigation)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchSuppliers()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [fetchSuppliers])
+
+  // Subscribe to cross-module data changes for instant refresh
+  useEffect(() => {
+    const unsubscribe = onDataChange((event: DataChangeEvent) => {
+      if (SUPPLIER_REFRESH_EVENTS.includes(event)) {
+        fetchSuppliers()
+      }
+    })
+    return unsubscribe
+  }, [onDataChange, fetchSuppliers])
 
   const openDialog = (supplier?: any) => {
     if (supplier) {
@@ -52,13 +84,23 @@ export function Suppliers() {
       toast.success(editing ? 'Supplier updated' : 'Supplier created')
       setDialog(false)
       fetchSuppliers()
+      // Notify all other modules about supplier change
+      notifyDataChange('supplier-changed')
     } catch { toast.error('Failed to save supplier') }
   }
 
   const remove = async (id: string) => {
     try {
       const res = await authFetch(`/api/suppliers/${id}`, { method: 'DELETE' })
-      if (res.ok) { toast.success('Supplier deleted'); fetchSuppliers() }
+      if (res.ok) {
+        toast.success('Supplier deleted')
+        fetchSuppliers()
+        // Notify all other modules about supplier change
+        notifyDataChange('supplier-changed')
+      } else {
+        const d = await res.json()
+        toast.error(d.error || 'Failed to delete')
+      }
     } catch { toast.error('Failed to delete') }
   }
 
@@ -66,9 +108,14 @@ export function Suppliers() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold">Suppliers</h2>
-        <Button onClick={() => openDialog()} className="bg-amber-800 hover:bg-amber-900 text-white">
-          <Plus className="h-4 w-4 mr-2" /> Add Supplier
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="icon" onClick={() => fetchSuppliers(true)} disabled={refreshing} title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button onClick={() => openDialog()} className="bg-amber-800 hover:bg-amber-900 text-white">
+            <Plus className="h-4 w-4 mr-2" /> Add Supplier
+          </Button>
+        </div>
       </div>
 
       <Card>

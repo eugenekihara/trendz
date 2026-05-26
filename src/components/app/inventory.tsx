@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -54,6 +54,8 @@ const INVENTORY_REFRESH_EVENTS: DataChangeEvent[] = [
   'product-deleted',
   'inventory-changed',
   'category-changed',
+  'supplier-changed',   // supplier info in product details
+  'settings-changed',   // settings like low stock threshold
 ]
 
 export function Inventory() {
@@ -86,7 +88,14 @@ export function Inventory() {
   // Category form
   const [catForm, setCatForm] = useState({ name: '', description: '', icon: '' })
 
+  // Debounce ref for fetchProducts — prevents triple-fetch on save
+  const lastFetchRef = useRef(0)
+
   const fetchProducts = useCallback(async () => {
+    // Debounce: don't re-fetch if we just fetched within the last 500ms
+    const now = Date.now()
+    if (now - lastFetchRef.current < 500) return
+    lastFetchRef.current = now
     try {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
@@ -137,6 +146,9 @@ export function Inventory() {
       }
       if (event === 'category-changed') {
         fetchCategories()
+      }
+      if (event === 'supplier-changed') {
+        fetchSuppliers()
       }
     })
     return unsubscribe
@@ -268,14 +280,11 @@ export function Inventory() {
     setDeleteCategory(cat)
     const productCount = cat._count?.products || 0
     if (productCount > 0) {
-      // Need to check if reassignment is required
-      const res = await authFetch(`/api/categories/${cat.id}`, { method: 'DELETE' })
-      const data = await res.json()
-      if (!res.ok && data.requiresReassignment) {
-        setDeleteDialog(true)
-        return
-      }
+      // Products exist — need reassignment dialog
+      setDeleteDialog(true)
+      return
     }
+    // No products — safe to show a simple confirm dialog
     setDeleteDialog(true)
   }
 

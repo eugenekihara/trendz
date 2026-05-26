@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useAppStore } from '@/store'
+import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -74,6 +74,7 @@ export function StaffSettings() {
   const user = useAppStore((s) => s.user)
   const updateUser = useAppStore((s) => s.updateUser)
   const authFetch = useAppStore((s) => s.authFetch)
+  const onDataChange = useAppStore((s) => s.onDataChange)
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [salesData, setSalesData] = useState<SalesData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -143,6 +144,31 @@ export function StaffSettings() {
   useEffect(() => {
     Promise.all([fetchProfile(), fetchSalesData()]).finally(() => setLoading(false))
   }, [fetchProfile, fetchSalesData])
+
+  // Refresh data when tab becomes visible (covers SPA navigation)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchProfile()
+        fetchSalesData()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [fetchProfile, fetchSalesData])
+
+  // Subscribe to cross-module data changes for instant refresh
+  useEffect(() => {
+    const unsubscribe = onDataChange((event: DataChangeEvent) => {
+      if (event === 'sale-created' || event === 'manual-entry-created' || event === 'user-changed') {
+        fetchSalesData()
+      }
+      if (event === 'user-changed') {
+        fetchProfile()
+      }
+    })
+    return unsubscribe
+  }, [onDataChange, fetchProfile, fetchSalesData])
 
   const saveProfile = async () => {
     setSaving(true)

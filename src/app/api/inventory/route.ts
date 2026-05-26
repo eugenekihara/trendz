@@ -125,7 +125,7 @@ export async function POST(request: Request) {
       })
     }
 
-    return NextResponse.json(product)
+    return NextResponse.json(product, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error: any) {
     console.error('Inventory POST error:', error)
     if (error.code === 'P2002') {

@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
     // Fetch paginated entries AND aggregate summary in parallel
     // Summary is computed over ALL matching entries, not just the current page
-    const [entries, total, summary] = await Promise.all([
+    const [entries, total, summary, posSummary] = await Promise.all([
       db.salesEntry.findMany({
         where,
         include: { user: { select: { id: true, name: true } } },
@@ -46,7 +46,17 @@ export async function GET(request: Request) {
         _sum: { amount: true, quantity: true },
         _count: true,
       }),
+      // Separate POS mirror entry summary for source breakdown
+      db.salesEntry.aggregate({
+        where: { ...where, source: 'pos' },
+        _sum: { amount: true },
+        _count: true,
+      }),
     ])
+
+    // Compute manual entry totals by subtraction (avoids a 5th query)
+    const manualAmount = (summary._sum.amount || 0) - (posSummary._sum.amount || 0)
+    const manualCount = summary._count - posSummary._count
 
     return NextResponse.json({
       entries,
@@ -54,10 +64,15 @@ export async function GET(request: Request) {
       page,
       limit,
       // Summary totals across ALL entries (not just current page)
+      // Includes source breakdown for alignment with Dashboard and Reports
       summary: {
         totalAmount: summary._sum.amount || 0,
         totalQuantity: summary._sum.quantity || 0,
         totalEntries: summary._count,
+        posAmount: posSummary._sum.amount || 0,
+        posCount: posSummary._count,
+        manualAmount,
+        manualCount,
       },
     }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {

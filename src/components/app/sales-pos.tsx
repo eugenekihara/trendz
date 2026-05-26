@@ -40,6 +40,8 @@ const POS_REFRESH_EVENTS: DataChangeEvent[] = [
   'sale-created',     // stock changes after a sale
   'sale-deleted',     // stock restored after a sale deletion
   'category-changed',
+  'supplier-changed', // supplier info changes
+  'settings-changed', // receipt/currency changes
 ]
 
 export function SalesPOS() {
@@ -146,10 +148,11 @@ export function SalesPOS() {
       if (POS_REFRESH_EVENTS.includes(event)) {
         fetchProducts()
         if (event === 'category-changed') fetchCategories()
+        if (event === 'settings-changed') fetchSettings()
       }
     })
     return unsubscribe
-  }, [onDataChange, fetchProducts, fetchCategories])
+  }, [onDataChange, fetchProducts, fetchCategories, fetchSettings])
 
   // Auto-refresh when the tab/window becomes visible again
   // Use only visibilitychange to avoid double-fetch (not also 'focus')

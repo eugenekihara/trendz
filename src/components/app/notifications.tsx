@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useAppStore } from '@/store'
+import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Bell, BellOff, Check, Package, AlertTriangle, Info } from 'lucide-react'
+import { Bell, BellOff, Check, Package, AlertTriangle, Info, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 const typeIcons: Record<string, React.ElementType> = {
@@ -23,21 +23,53 @@ const typeColors: Record<string, string> = {
   system: 'text-amber-700 bg-amber-50 dark:bg-amber-950',
 }
 
+// Events that should trigger a Notifications refresh
+const NOTIF_REFRESH_EVENTS: DataChangeEvent[] = [
+  'sale-created',       // new sale could generate notifications
+  'inventory-changed',  // low stock notifications
+  'settings-changed',   // notification preferences changed
+]
+
 export function Notifications() {
   const authFetch = useAppStore((s) => s.authFetch)
+  const onDataChange = useAppStore((s) => s.onDataChange)
   const [notifications, setNotifications] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
-  const fetchNotifs = useCallback(async () => {
+  const fetchNotifs = useCallback(async (showRefresh = false) => {
     try {
+      if (showRefresh) setRefreshing(true)
       const res = await authFetch('/api/notifications')
       if (res.ok) setNotifications(await res.json())
-    } catch {} finally {
+    } catch {
+      console.error('Failed to fetch notifications')
+    } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }, [authFetch])
 
   useEffect(() => { fetchNotifs() }, [fetchNotifs])
+
+  // Refresh data when tab becomes visible (covers SPA navigation)
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchNotifs()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [fetchNotifs])
+
+  // Subscribe to cross-module data changes for instant refresh
+  useEffect(() => {
+    const unsubscribe = onDataChange((event: DataChangeEvent) => {
+      if (NOTIF_REFRESH_EVENTS.includes(event)) {
+        fetchNotifs()
+      }
+    })
+    return unsubscribe
+  }, [onDataChange, fetchNotifs])
 
   const markRead = async (id?: string) => {
     try {
@@ -49,7 +81,9 @@ export function Notifications() {
         toast.success(id ? 'Marked as read' : 'All marked as read')
         fetchNotifs()
       }
-    } catch {}
+    } catch {
+      toast.error('Failed to update notification')
+    }
   }
 
   const unread = notifications.filter((n) => !n.read)
@@ -62,11 +96,16 @@ export function Notifications() {
           <h2 className="text-lg font-semibold">Notifications</h2>
           {unread.length > 0 && <Badge className="bg-red-500 text-white">{unread.length} new</Badge>}
         </div>
-        {unread.length > 0 && (
-          <Button variant="outline" size="sm" onClick={() => markRead()}>
-            <Check className="h-4 w-4 mr-1" /> Mark all read
+        <div className="flex gap-2">
+          <Button variant="outline" size="icon" onClick={() => fetchNotifs(true)} disabled={refreshing} title="Refresh">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
-        )}
+          {unread.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => markRead()}>
+              <Check className="h-4 w-4 mr-1" /> Mark all read
+            </Button>
+          )}
+        </div>
       </div>
 
       <ScrollArea className="h-[calc(100vh-14rem)]">

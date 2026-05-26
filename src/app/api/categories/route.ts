@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       },
     })
 
-    return NextResponse.json(category)
+    return NextResponse.json(category, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error: any) {
     console.error('Categories POST error:', error)
     if (error.code === 'P2002') {

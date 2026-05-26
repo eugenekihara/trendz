@@ -23,6 +23,9 @@ export type DataChangeEvent =
   | 'inventory-changed'
   | 'category-changed'
   | 'manual-entry-created'
+  | 'supplier-changed'
+  | 'settings-changed'
+  | 'user-changed'
 
 interface AppState {
   user: User | null

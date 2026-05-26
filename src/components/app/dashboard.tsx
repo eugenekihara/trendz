@@ -38,6 +38,9 @@ const DASHBOARD_EVENTS: DataChangeEvent[] = [
   'inventory-changed',
   'category-changed',
   'manual-entry-created',
+  'supplier-changed',    // supplier count changes
+  'settings-changed',    // currency/shop name changes
+  'user-changed',        // user count changes
 ]
 
 export function Dashboard() {
