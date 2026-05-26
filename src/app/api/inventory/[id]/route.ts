@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+// Force dynamic rendering — never cache this route
+export const dynamic = 'force-dynamic'
+
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await verifyAuth('admin')
@@ -47,13 +50,46 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     // Remove undefined values so Prisma doesn't try to set them to undefined
     Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key])
 
+    // ─── Handle quantity change with stockMove audit trail ───
+    // If quantity is being changed, we need to track the adjustment
+    if (data.quantity !== undefined) {
+      const newQuantity = parseInt(data.quantity)
+      if (!isNaN(newQuantity) && newQuantity >= 0) {
+        // Fetch current product to compare quantities
+        const currentProduct = await db.product.findUnique({
+          where: { id },
+          select: { quantity: true, name: true },
+        })
+
+        if (currentProduct) {
+          const diff = newQuantity - currentProduct.quantity
+          if (diff !== 0) {
+            // Create a stock move to audit the quantity change
+            await db.stockMove.create({
+              data: {
+                productId: id,
+                type: diff > 0 ? 'in' : 'out',
+                quantity: Math.abs(diff),
+                reason: `Stock adjustment (${currentProduct.name}: ${currentProduct.quantity} → ${newQuantity})`,
+                reference: 'inventory-edit',
+              },
+            })
+          }
+        }
+
+        updateData.quantity = newQuantity
+      }
+    }
+
     const product = await db.product.update({
       where: { id },
       data: updateData,
       include: { category: true, supplier: true },
     })
 
-    return NextResponse.json(product)
+    return NextResponse.json(product, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+    })
   } catch (error: any) {
     console.error('Inventory PUT error:', error)
     if (error.code === 'P2002') {
@@ -73,7 +109,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const { id } = await params
     await db.product.update({ where: { id }, data: { active: false } })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+    })
   } catch (error) {
     console.error('Inventory DELETE error:', error)
     return NextResponse.json({ error: 'Failed to delete product' }, { status: 500 })

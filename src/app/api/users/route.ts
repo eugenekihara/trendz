@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const users = await db.user.findMany({
@@ -16,10 +18,10 @@ export async function GET() {
       },
       orderBy: { name: 'asc' },
     })
-    return NextResponse.json(users)
+    return NextResponse.json(users, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Users GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }
 
@@ -27,13 +29,13 @@ export async function POST(request: Request) {
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const data = await request.json()
     const existing = await db.user.findUnique({ where: { email: data.email } })
     if (existing) {
-      return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
+      return NextResponse.json({ error: 'Email already exists' }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const user = await db.user.create({
@@ -59,12 +61,12 @@ export async function POST(request: Request) {
       },
     })
 
-    return NextResponse.json(user)
+    return NextResponse.json(user, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error: any) {
     console.error('Users POST error:', error)
     if (error.code === 'P2002') {
-      return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
+      return NextResponse.json({ error: 'Email already exists' }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
-    return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create user' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }

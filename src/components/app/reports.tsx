@@ -34,10 +34,21 @@ const PAYMENT_LABELS: Record<string, string> = {
   bank_transfer: 'Bank Transfer',
 }
 
+// All events that should trigger a Reports refresh
+const REPORTS_REFRESH_EVENTS: DataChangeEvent[] = [
+  'sale-created',
+  'sale-deleted',
+  'product-created',
+  'product-updated',
+  'product-deleted',
+  'inventory-changed',
+  'category-changed',
+  'manual-entry-created',
+]
+
 export function Reports() {
   const authFetch = useAppStore((s) => s.authFetch)
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
-  const notifyDataChange = useAppStore((s) => s.notifyDataChange)
   const onDataChange = useAppStore((s) => s.onDataChange)
   const [data, setData] = useState<ReportData | null>(null)
   const [period, setPeriod] = useState('month')
@@ -76,17 +87,7 @@ export function Reports() {
   // Subscribe to cross-module data changes for instant refresh
   useEffect(() => {
     const unsubscribe = onDataChange((event: DataChangeEvent) => {
-      // Refresh report data whenever relevant data changes
-      if (
-        event === 'sale-created' ||
-        event === 'sale-deleted' ||
-        event === 'product-created' ||
-        event === 'product-updated' ||
-        event === 'product-deleted' ||
-        event === 'inventory-changed' ||
-        event === 'category-changed' ||
-        event === 'manual-entry-created'
-      ) {
+      if (REPORTS_REFRESH_EVENTS.includes(event)) {
         fetchReport()
       }
     })

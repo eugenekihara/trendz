@@ -46,6 +46,10 @@ interface AppState {
 // External listener registry for data change events
 const dataChangeListeners = new Set<(event: DataChangeEvent) => void>()
 
+// Debounce map: coalesce rapid-fire events of the same type within a window
+const debounceTimers = new Map<DataChangeEvent, ReturnType<typeof setTimeout>>()
+const DEBOUNCE_MS = 150 // ms — fast enough to feel instant, slow enough to coalesce rapid events
+
 export const useAppStore = create<AppState>((set, get) => ({
   user: null,
   currentPage: 'dashboard',
@@ -75,14 +79,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     return fetch(url, { ...options, headers, cache: cacheOpt })
   },
 
-  // Emit a data change event to all subscribers
+  // Emit a data change event to all subscribers (debounced to prevent rapid re-fetches)
   notifyDataChange: (event) => {
-    // Increment dataVersion to trigger Zustand re-renders for subscribers
+    // Always increment dataVersion immediately so Zustand subscribers react
     set((state) => ({ dataVersion: state.dataVersion + 1 }))
-    // Notify all external listeners (useEffect-based subscribers)
-    dataChangeListeners.forEach((cb) => {
-      try { cb(event) } catch (e) { console.error('Data change listener error:', e) }
-    })
+
+    // Debounce the listener notification to coalesce rapid events
+    const existing = debounceTimers.get(event)
+    if (existing) clearTimeout(existing)
+
+    const timer = setTimeout(() => {
+      debounceTimers.delete(event)
+      dataChangeListeners.forEach((cb) => {
+        try { cb(event) } catch (e) { console.error('Data change listener error:', e) }
+      })
+    }, DEBOUNCE_MS)
+
+    debounceTimers.set(event, timer)
   },
 
   // Subscribe to data change events. Returns unsubscribe function.

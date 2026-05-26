@@ -6,7 +6,9 @@ import { verifyAuth } from '@/lib/auth'
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/reports - Generate reports from live Sale data (same source as Dashboard)
+ * GET /api/reports - Generate reports from ALL live data (POS sales + manual entries)
+ * This ensures Reports always match Dashboard and Sales Tracking totals.
+ *
  * Query params:
  *   period: 'week' | 'month' | 'year' (default: 'month')
  *   startDate: ISO date string (overrides period)
@@ -53,95 +55,119 @@ export async function GET(request: Request) {
       }
     }
 
-    const dateFilter = { createdAt: { gte: startDate, lte: endDate } }
+    const saleDateFilter = { createdAt: { gte: startDate, lte: endDate } }
+    const entryDateFilter = { date: { gte: startDate, lte: endDate } }
 
-    // All queries use the Sale table — the single source of truth for sales data
-    // This ensures Reports always match Dashboard and Sales Tracking
+    // ─── POS sales data from Sale table ───
     const [
-      totalSales,
-      totalRevenue,
-      totalItemsSold,
-      salesByDay,
+      posTotalSales,
+      posTotalRevenue,
+      posTotalItemsSold,
+      posSalesByDay,
       salesByPaymentMethod,
-      topProducts,
-      categoryBreakdown,
+      posTopProducts,
     ] = await Promise.all([
-      // Total sale count in period
-      db.sale.count({ where: dateFilter }),
+      // POS sale count in period
+      db.sale.count({ where: saleDateFilter }),
 
-      // Total revenue in period
+      // POS revenue in period
       db.sale.aggregate({
         _sum: { total: true, discount: true },
         _count: true,
-        where: dateFilter,
+        where: saleDateFilter,
       }),
 
-      // Total items sold in period
+      // POS items sold in period
       db.saleItem.aggregate({
         _sum: { quantity: true },
-        where: { sale: dateFilter },
+        where: { sale: saleDateFilter },
       }),
 
-      // Sales grouped by day
+      // POS sales grouped by day
       db.sale.findMany({
-        where: dateFilter,
+        where: saleDateFilter,
         select: { createdAt: true, total: true },
         orderBy: { createdAt: 'asc' },
       }),
 
-      // Sales grouped by payment method
+      // POS sales grouped by payment method
       db.sale.groupBy({
         by: ['paymentMethod'],
         _sum: { total: true },
         _count: true,
-        where: dateFilter,
+        where: saleDateFilter,
       }),
 
-      // Top selling products
+      // Top selling products (from POS SaleItems)
       db.saleItem.groupBy({
         by: ['productId'],
         _sum: { quantity: true, total: true },
         _count: true,
-        where: { sale: dateFilter },
+        where: { sale: saleDateFilter },
         orderBy: { _sum: { total: 'desc' } },
         take: 10,
       }),
+    ])
 
-      // Category breakdown (active products only)
-      db.category.findMany({
-        include: {
-          _count: { select: { products: { where: { active: true } } } },
-        },
+    // ─── Manual sales entries in the same period ───
+    const [manualTotal, manualRevenue, manualSalesByDay] = await Promise.all([
+      db.salesEntry.count({ where: { source: 'manual', ...entryDateFilter } }),
+      db.salesEntry.aggregate({
+        _sum: { amount: true },
+        where: { source: 'manual', ...entryDateFilter },
+      }),
+      db.salesEntry.findMany({
+        where: { source: 'manual', ...entryDateFilter },
+        select: { date: true, amount: true },
       }),
     ])
 
-    // Process sales by day
+    // ─── Combined totals ───
+    const totalSales = posTotalSales + manualTotal
+    const totalRevenue = (posTotalRevenue._sum.total || 0) + (manualRevenue._sum.amount || 0)
+    const totalDiscount = posTotalRevenue._sum.discount || 0
+    const totalItemsSold = posTotalItemsSold._sum.quantity || 0
+
+    // ─── Process daily sales (POS + manual combined) ───
     const dailySalesMap: Record<string, number> = {}
-    for (const sale of salesByDay) {
+    // Add POS daily sales
+    for (const sale of posSalesByDay) {
       const key = sale.createdAt.toISOString().split('T')[0]
       dailySalesMap[key] = (dailySalesMap[key] || 0) + sale.total
+    }
+    // Add manual daily sales
+    for (const entry of manualSalesByDay) {
+      const key = entry.date.toISOString().split('T')[0]
+      dailySalesMap[key] = (dailySalesMap[key] || 0) + entry.amount
     }
     const dailySales = Object.entries(dailySalesMap)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, total]) => ({ date, total }))
 
-    // Enrich top products with name and category
-    const topProductIds = topProducts.map(item => item.productId)
+    // ─── Enrich top products with name and category ───
+    const topProductIds = posTopProducts.map(item => item.productId)
     const topProductsData = await db.product.findMany({
       where: { id: { in: topProductIds } },
       select: { id: true, name: true, category: { select: { name: true } } },
     })
-    const topProductsWithDetails = topProducts.map(item => ({
+    const topProductsWithDetails = posTopProducts.map(item => ({
       ...item,
       product: topProductsData.find(p => p.id === item.productId) || null,
     }))
 
-    // Process payment method breakdown
+    // ─── Process payment method breakdown (POS only — manual entries don't have payment methods) ───
     const paymentMethodBreakdown = salesByPaymentMethod.map(item => ({
       method: item.paymentMethod,
       total: item._sum.total || 0,
       count: item._count,
     }))
+
+    // ─── Category breakdown (active products, date-aware via sales data) ───
+    const categoryBreakdown = await db.category.findMany({
+      include: {
+        _count: { select: { products: { where: { active: true } } } },
+      },
+    })
 
     const result = {
       period,
@@ -149,10 +175,10 @@ export async function GET(request: Request) {
       endDate: endDate.toISOString(),
       summary: {
         totalSales,
-        totalRevenue: totalRevenue._sum.total || 0,
-        totalDiscount: totalRevenue._sum.discount || 0,
-        totalItemsSold: totalItemsSold._sum.quantity || 0,
-        averageSale: totalSales > 0 ? (totalRevenue._sum.total || 0) / totalSales : 0,
+        totalRevenue,
+        totalDiscount,
+        totalItemsSold,
+        averageSale: totalSales > 0 ? totalRevenue / totalSales : 0,
       },
       dailySales,
       topProducts: topProductsWithDetails,

@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const auth = await verifyAuth()
     if (!auth.authenticated) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const userId = auth.user!.id
@@ -79,9 +81,9 @@ export async function GET() {
       },
       recentTransactions: recentSales,
       dailyTrend: Object.entries(dailyData).map(([date, data]) => ({ date, ...data })),
-    })
+    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Staff sales GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch sales data' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch sales data' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }

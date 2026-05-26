@@ -45,6 +45,17 @@ interface Product {
   supplier?: any
 }
 
+// All events that should trigger an Inventory refresh
+const INVENTORY_REFRESH_EVENTS: DataChangeEvent[] = [
+  'sale-created',       // stock decreases after a sale
+  'sale-deleted',       // stock restored after a sale deletion
+  'product-created',
+  'product-updated',
+  'product-deleted',
+  'inventory-changed',
+  'category-changed',
+]
+
 export function Inventory() {
   const user = useAppStore((s) => s.user)
   const authFetch = useAppStore((s) => s.authFetch)
@@ -121,11 +132,9 @@ export function Inventory() {
   // Subscribe to cross-module data changes for instant refresh
   useEffect(() => {
     const unsubscribe = onDataChange((event: DataChangeEvent) => {
-      // When a sale is made, stock levels change — refresh product list
-      if (event === 'sale-created' || event === 'inventory-changed') {
+      if (INVENTORY_REFRESH_EVENTS.includes(event)) {
         fetchProducts()
       }
-      // When categories change externally, refresh categories
       if (event === 'category-changed') {
         fetchCategories()
       }
@@ -176,8 +185,11 @@ export function Inventory() {
       toast.success(editingProduct ? 'Product updated' : 'Product created')
       setProductDialog(false)
       fetchProducts()
-      // Notify all other modules (POS, Dashboard, Reports) about product change
-      notifyDataChange(editingProduct ? 'product-updated' : 'product-created')
+      // Notify all other modules (POS, Dashboard, Reports, Sales Tracking) about product change
+      const event = editingProduct ? 'product-updated' : 'product-created'
+      notifyDataChange(event)
+      // Also emit inventory-changed so all modules refresh
+      notifyDataChange('inventory-changed')
     } catch (error) {
       toast.error('Failed to save product')
     }
@@ -191,6 +203,7 @@ export function Inventory() {
         fetchProducts()
         // Notify all other modules about product deletion
         notifyDataChange('product-deleted')
+        notifyDataChange('inventory-changed')
       } else {
         const data = await res.json()
         toast.error(data.error)
@@ -424,6 +437,12 @@ export function Inventory() {
             {!editingProduct && (
               <div className="space-y-2">
                 <Label>Initial Stock</Label>
+                <Input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
+              </div>
+            )}
+            {editingProduct && (
+              <div className="space-y-2">
+                <Label>Current Stock</Label>
                 <Input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} />
               </div>
             )}

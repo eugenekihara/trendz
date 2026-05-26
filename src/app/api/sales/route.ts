@@ -68,6 +68,30 @@ export async function POST(request: Request) {
       }
     }
 
+    // ─── Pre-check stock availability before creating the sale ───
+    const productIds = data.items.map((item: any) => item.productId)
+    const products = await db.product.findMany({
+      where: { id: { in: productIds }, active: true },
+      select: { id: true, name: true, quantity: true },
+    })
+
+    // Check each item has sufficient stock
+    for (const item of data.items) {
+      const product = products.find((p: any) => p.id === item.productId)
+      if (!product) {
+        return NextResponse.json({ error: `Product not found or inactive: ${item.productName || item.productId}` }, { status: 400 })
+      }
+      // Aggregate total quantity for this product across all cart items
+      const totalQtyForProduct = data.items
+        .filter((i: any) => i.productId === item.productId)
+        .reduce((sum: number, i: any) => sum + i.quantity, 0)
+      if (totalQtyForProduct > product.quantity) {
+        return NextResponse.json({
+          error: `Insufficient stock for "${product.name}". Available: ${product.quantity}, Requested: ${totalQtyForProduct}`,
+        }, { status: 400 })
+      }
+    }
+
     // Generate invoice number
     const settings = await db.setting.findUnique({ where: { key: 'receiptPrefix' } })
     const prefix = settings?.value || 'INV'
@@ -80,6 +104,17 @@ export async function POST(request: Request) {
 
     // Wrap entire sale creation in a transaction for atomicity
     const sale = await db.$transaction(async (tx) => {
+      // ─── Re-check stock inside transaction to prevent race conditions ───
+      for (const item of data.items) {
+        const currentProduct = await tx.product.findUnique({
+          where: { id: item.productId },
+          select: { quantity: true, name: true },
+        })
+        if (!currentProduct || currentProduct.quantity < item.quantity) {
+          throw new Error(`Insufficient stock for "${currentProduct?.name || item.productId}". Available: ${currentProduct?.quantity || 0}`)
+        }
+      }
+
       const newSale = await tx.sale.create({
         data: {
           invoiceNumber,
@@ -121,7 +156,7 @@ export async function POST(request: Request) {
         })
       }
 
-      // Create sales entry
+      // Create sales entry (mirror for Sales Tracking)
       await tx.salesEntry.create({
         data: {
           productName: data.items.map((i: any) => i.productName || i.productId).join(', '),
@@ -152,9 +187,15 @@ export async function POST(request: Request) {
       return newSale
     })
 
-    return NextResponse.json(sale)
-  } catch (error) {
+    return NextResponse.json(sale, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+    })
+  } catch (error: any) {
     console.error('Sales POST error:', error)
+    // If the error is from our stock check inside the transaction
+    if (error.message?.startsWith('Insufficient stock')) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return NextResponse.json({ error: 'Failed to create sale' }, { status: 500 })
   }
 }

@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const { id } = await params
@@ -16,13 +18,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     })
 
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+      return NextResponse.json({ error: 'User not found' }, { status: 404, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
-    return NextResponse.json(user)
+    return NextResponse.json(user, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('User GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch user' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch user' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }
 
@@ -30,7 +32,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const { id } = await params
@@ -61,13 +63,13 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       },
     })
 
-    return NextResponse.json(user)
+    return NextResponse.json(user, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error: any) {
     console.error('User PUT error:', error)
     if (error.code === 'P2002') {
-      return NextResponse.json({ error: 'Email already exists' }, { status: 400 })
+      return NextResponse.json({ error: 'Email already exists' }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
-    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to update user' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }
 
@@ -75,12 +77,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const { id } = await params
     if (id === auth.user!.id) {
-      return NextResponse.json({ error: 'Cannot delete yourself' }, { status: 400 })
+      return NextResponse.json({ error: 'Cannot delete yourself' }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     await db.user.delete({ where: { id } })
@@ -95,9 +97,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('User DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }

@@ -28,6 +28,18 @@ interface DashboardData {
 
 const COLORS = ['#92400e', '#b45309', '#d97706', '#f59e0b', '#78350f', '#a16207', '#ca8a04', '#854d0e']
 
+// All events that should trigger a Dashboard refresh
+const DASHBOARD_EVENTS: DataChangeEvent[] = [
+  'sale-created',
+  'sale-deleted',
+  'product-created',
+  'product-updated',
+  'product-deleted',
+  'inventory-changed',
+  'category-changed',
+  'manual-entry-created',
+]
+
 export function Dashboard() {
   const authFetch = useAppStore((s) => s.authFetch)
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
@@ -64,17 +76,7 @@ export function Dashboard() {
   // Subscribe to cross-module data changes for instant refresh
   useEffect(() => {
     const unsubscribe = onDataChange((event: DataChangeEvent) => {
-      // Refresh dashboard whenever any relevant data changes
-      if (
-        event === 'sale-created' ||
-        event === 'sale-deleted' ||
-        event === 'product-created' ||
-        event === 'product-updated' ||
-        event === 'product-deleted' ||
-        event === 'inventory-changed' ||
-        event === 'category-changed' ||
-        event === 'manual-entry-created'
-      ) {
+      if (DASHBOARD_EVENTS.includes(event)) {
         fetchDashboard()
       }
     })

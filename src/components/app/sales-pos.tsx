@@ -31,6 +31,17 @@ interface CartItem {
   price: number
 }
 
+// Events that should trigger a POS product refresh
+const POS_REFRESH_EVENTS: DataChangeEvent[] = [
+  'product-created',
+  'product-updated',
+  'product-deleted',
+  'inventory-changed',
+  'sale-created',     // stock changes after a sale
+  'sale-deleted',     // stock restored after a sale deletion
+  'category-changed',
+]
+
 export function SalesPOS() {
   const authFetch = useAppStore((s) => s.authFetch)
   const notifyDataChange = useAppStore((s) => s.notifyDataChange)
@@ -54,10 +65,16 @@ export function SalesPOS() {
     currency: 'KES',
   })
   const mountedRef = useRef(true)
+  const lastRefreshRef = useRef(0)
 
   // Fetch all active products (including out-of-stock so user can see them)
   // Cache-busting timestamp ensures we never get a stale browser-cached response
   const fetchProducts = useCallback(async (showRefresh = false) => {
+    // Debounce: don't re-fetch if we just fetched within the last 500ms
+    const now = Date.now()
+    if (now - lastRefreshRef.current < 500 && !showRefresh) return
+    lastRefreshRef.current = now
+
     try {
       if (showRefresh) setRefreshing(true)
       const ts = Date.now()
@@ -126,7 +143,7 @@ export function SalesPOS() {
   // Subscribe to cross-module data changes for instant refresh
   useEffect(() => {
     const unsubscribe = onDataChange((event: DataChangeEvent) => {
-      if (event === 'product-created' || event === 'product-updated' || event === 'product-deleted' || event === 'inventory-changed' || event === 'category-changed') {
+      if (POS_REFRESH_EVENTS.includes(event)) {
         fetchProducts()
         if (event === 'category-changed') fetchCategories()
       }
@@ -135,25 +152,23 @@ export function SalesPOS() {
   }, [onDataChange, fetchProducts, fetchCategories])
 
   // Auto-refresh when the tab/window becomes visible again
-  // This covers both: switching browser tabs AND SPA navigation (via visibilitychange)
+  // Use only visibilitychange to avoid double-fetch (not also 'focus')
   useEffect(() => {
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchProducts()
       }
     }
-    const onFocus = () => { fetchProducts() }
     document.addEventListener('visibilitychange', onVisibilityChange)
-    window.addEventListener('focus', onFocus)
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange)
-      window.removeEventListener('focus', onFocus)
     }
   }, [fetchProducts])
 
   // Manual refresh all data
   const refreshAll = async () => {
     setRefreshing(true)
+    lastRefreshRef.current = 0 // Reset debounce for manual refresh
     await Promise.all([fetchProducts(true), fetchCategories(), fetchSettings()])
   }
 
@@ -238,8 +253,9 @@ export function SalesPOS() {
       toast.success('Sale completed!')
 
       // Refresh products to update stock levels immediately
+      lastRefreshRef.current = 0 // Reset debounce for post-sale refresh
       fetchProducts()
-      // Notify all other modules (Dashboard, Reports, Sales Tracking) about the new sale
+      // Notify all other modules (Dashboard, Reports, Sales Tracking, Inventory) about the new sale
       notifyDataChange('sale-created')
     } catch {
       toast.error('Failed to complete sale')

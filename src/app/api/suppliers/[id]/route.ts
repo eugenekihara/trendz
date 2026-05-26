@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+export const dynamic = 'force-dynamic'
+
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const { id } = await params
@@ -24,10 +26,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       },
     })
 
-    return NextResponse.json(supplier)
+    return NextResponse.json(supplier, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Supplier PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update supplier' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to update supplier' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }
 
@@ -35,14 +37,14 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const { id } = await params
     await db.supplier.update({ where: { id }, data: { active: false } })
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Supplier DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete supplier' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to delete supplier' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }

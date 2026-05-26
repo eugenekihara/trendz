@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const [users, categories, products, suppliers, sales, saleItems, salesEntries, settings, notifications, auditLogs] = await Promise.all([
@@ -26,10 +28,10 @@ export async function GET() {
       exportDate: new Date().toISOString(),
       version: '1.0',
       data: { users, categories, products, suppliers, sales, saleItems, salesEntries, settings, notifications, auditLogs },
-    })
+    }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Backup GET error:', error)
-    return NextResponse.json({ error: 'Failed to export backup' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to export backup' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }
 
@@ -37,12 +39,12 @@ export async function POST(request: Request) {
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const backup = await request.json()
     if (!backup.data) {
-      return NextResponse.json({ error: 'Invalid backup data' }, { status: 400 })
+      return NextResponse.json({ error: 'Invalid backup data' }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     // Clear existing data and restore in a transaction for atomicity
@@ -75,9 +77,9 @@ export async function POST(request: Request) {
       if (notifications?.length) await tx.notification.createMany({ data: notifications })
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Backup POST error:', error)
-    return NextResponse.json({ error: 'Failed to restore backup' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to restore backup' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }

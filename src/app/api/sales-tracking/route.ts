@@ -101,9 +101,9 @@ export async function POST(request: Request) {
       include: { user: { select: { id: true, name: true } } },
     })
 
-    return NextResponse.json(entry)
+    return NextResponse.json(entry, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Sales tracking POST error:', error)
-    return NextResponse.json({ error: 'Failed to create entry' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create entry' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }

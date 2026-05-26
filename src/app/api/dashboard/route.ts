@@ -15,13 +15,14 @@ export async function GET() {
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
+    // ─── Core counts & aggregates from Sale table (POS sales) ───
     const [
       totalProducts,
       lowStockProductsRaw,
-      totalSales,
-      monthSales,
-      totalRevenue,
-      monthRevenue,
+      posTotalSales,
+      posMonthSales,
+      posTotalRevenue,
+      posMonthRevenue,
       totalCategories,
       totalSuppliers,
       totalUsers,
@@ -39,7 +40,28 @@ export async function GET() {
       db.user.count({ where: { active: true } }),
     ])
 
-    // Recent sales
+    // ─── Manual sales entries (source='manual') ───
+    // These are sales tracked outside POS and must be included in totals
+    const [manualTotal, manualMonth] = await Promise.all([
+      db.salesEntry.aggregate({
+        _sum: { amount: true },
+        _count: true,
+        where: { source: 'manual' },
+      }),
+      db.salesEntry.aggregate({
+        _sum: { amount: true },
+        _count: true,
+        where: { source: 'manual', date: { gte: startOfMonth } },
+      }),
+    ])
+
+    // ─── Combined totals (POS + Manual) ───
+    const totalSales = posTotalSales + manualTotal._count
+    const monthSales = posMonthSales + manualMonth._count
+    const totalRevenue = (posTotalRevenue._sum.total || 0) + (manualTotal._sum.amount || 0)
+    const monthRevenue = (posMonthRevenue._sum.total || 0) + (manualMonth._sum.amount || 0)
+
+    // ─── Recent sales (from Sale table only — POS sales with full item detail) ───
     const recentSales = await db.sale.findMany({
       take: 5,
       orderBy: { createdAt: 'desc' },
@@ -56,7 +78,7 @@ export async function GET() {
 
     const lowStockProducts = (lowStockProductsRaw as Array<{ quantity: number; minStock: number }>).filter(p => p.quantity > 0 && p.quantity <= p.minStock).length
 
-    // Top products - fetch all at once instead of N+1
+    // ─── Top products (from POS SaleItems only — manual entries don't have product breakdown) ───
     const topProducts = await db.saleItem.groupBy({
       by: ['productId'],
       _sum: { quantity: true, total: true },
@@ -74,26 +96,42 @@ export async function GET() {
       product: topProductsData.find(p => p.id === item.productId) || null,
     }))
 
-    // Daily sales last 7 days
+    // ─── Daily sales last 7 days (POS sales + manual entries combined) ───
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6)
     sevenDaysAgo.setHours(0, 0, 0, 0)
 
-    const recentSalesData = await db.sale.findMany({
+    // Fetch POS sales for last 7 days
+    const posRecentSalesData = await db.sale.findMany({
       where: { createdAt: { gte: sevenDaysAgo } },
       select: { createdAt: true, total: true },
     })
 
+    // Fetch manual entries for last 7 days
+    const manualRecentEntries = await db.salesEntry.findMany({
+      where: { source: 'manual', date: { gte: sevenDaysAgo } },
+      select: { date: true, amount: true },
+    })
+
+    // Build daily sales map combining both sources
     const dailySales: Record<string, number> = {}
     for (let i = 0; i < 7; i++) {
       const d = new Date(sevenDaysAgo)
       d.setDate(d.getDate() + i)
       dailySales[d.toISOString().split('T')[0]] = 0
     }
-    for (const sale of recentSalesData) {
+    // Add POS sales
+    for (const sale of posRecentSalesData) {
       const key = sale.createdAt.toISOString().split('T')[0]
       if (dailySales[key] !== undefined) {
         dailySales[key] += sale.total
+      }
+    }
+    // Add manual entries
+    for (const entry of manualRecentEntries) {
+      const key = entry.date.toISOString().split('T')[0]
+      if (dailySales[key] !== undefined) {
+        dailySales[key] += entry.amount
       }
     }
 
@@ -103,8 +141,8 @@ export async function GET() {
         lowStockProducts,
         totalSales,
         monthSales,
-        totalRevenue: totalRevenue._sum.total || 0,
-        monthRevenue: monthRevenue._sum.total || 0,
+        totalRevenue,
+        monthRevenue,
         totalCategories,
         totalSuppliers,
         totalUsers,

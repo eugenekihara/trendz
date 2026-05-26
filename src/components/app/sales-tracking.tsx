@@ -12,6 +12,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { TrendingUp, Plus, Calendar, ShoppingCart, ArrowRight, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
+// All events that should trigger a Sales Tracking refresh
+const SALES_TRACKING_EVENTS: DataChangeEvent[] = [
+  'sale-created',
+  'sale-deleted',
+  'product-updated',     // product name changes could affect display
+  'product-deleted',
+  'inventory-changed',   // stock changes could affect context
+  'manual-entry-created',
+]
+
 export function SalesTracking() {
   const user = useAppStore((s) => s.user)
   const authFetch = useAppStore((s) => s.authFetch)
@@ -67,7 +77,7 @@ export function SalesTracking() {
   // Subscribe to cross-module data changes for instant refresh
   useEffect(() => {
     const unsubscribe = onDataChange((event: DataChangeEvent) => {
-      if (event === 'sale-created' || event === 'sale-deleted' || event === 'manual-entry-created') {
+      if (SALES_TRACKING_EVENTS.includes(event)) {
         fetchEntries()
       }
     })
@@ -89,7 +99,8 @@ export function SalesTracking() {
       setAddDialog(false)
       setForm({ productName: '', quantity: '', amount: '', date: '' })
       fetchEntries()
-      // Notify other modules about the new manual entry
+      // Notify all other modules about the new manual entry
+      // This is critical — Dashboard and Reports must refresh to include this manual entry
       notifyDataChange('manual-entry-created')
     } catch {
       toast.error('Failed to add entry')

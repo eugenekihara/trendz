@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
 
+export const dynamic = 'force-dynamic'
+
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const { id } = await params
@@ -17,7 +19,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         where: { name: { equals: data.name.trim() }, id: { not: id } },
       })
       if (existing) {
-        return NextResponse.json({ error: 'Category name already exists' }, { status: 400 })
+        return NextResponse.json({ error: 'Category name already exists' }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
       }
     }
 
@@ -41,10 +43,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       },
     })
 
-    return NextResponse.json(category)
+    return NextResponse.json(category, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Category PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update category' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to update category' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }
 
@@ -52,7 +54,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     const auth = await verifyAuth('admin')
     if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 403 })
+      return NextResponse.json({ error: auth.error || 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     const { id } = await params
@@ -68,7 +70,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
         error: 'Category has active products',
         productCount,
         requiresReassignment: true,
-      }, { status: 400 })
+      }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
     if (productCount > 0 && reassignTo) {
@@ -91,9 +93,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Category DELETE error:', error)
-    return NextResponse.json({ error: 'Failed to delete category' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to delete category' }, { status: 500, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   }
 }
