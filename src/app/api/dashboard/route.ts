@@ -28,8 +28,6 @@ export async function GET() {
       totalUsers,
     ] = await Promise.all([
       db.product.count({ where: { active: true } }),
-      // Low stock: products where quantity > 0 but quantity <= minStock
-      // Since SQLite can't compare columns in WHERE, we fetch all active products and filter
       db.product.findMany({ where: { active: true }, select: { quantity: true, minStock: true } }),
       db.sale.count(),
       db.sale.count({ where: { createdAt: { gte: startOfMonth } } }),
@@ -41,7 +39,6 @@ export async function GET() {
     ])
 
     // ─── Manual sales entries (source='manual') ───
-    // These are sales tracked outside POS and must be included in totals
     const [manualTotal, manualMonth] = await Promise.all([
       db.salesEntry.aggregate({
         _sum: { amount: true },
@@ -55,14 +52,39 @@ export async function GET() {
       }),
     ])
 
-    // ─── Combined totals (POS + Manual) ───
-    const totalSales = posTotalSales + manualTotal._count
-    const monthSales = posMonthSales + manualMonth._count
-    const totalRevenue = (posTotalRevenue._sum.total || 0) + (manualTotal._sum.amount || 0)
-    const monthRevenue = (posMonthRevenue._sum.total || 0) + (manualMonth._sum.amount || 0)
+    // ─── Credit sales entries (source='credit') ───
+    const [creditTotal, creditMonth] = await Promise.all([
+      db.salesEntry.aggregate({
+        _sum: { amount: true },
+        _count: true,
+        where: { source: 'credit' },
+      }),
+      db.salesEntry.aggregate({
+        _sum: { amount: true },
+        _count: true,
+        where: { source: 'credit', date: { gte: startOfMonth } },
+      }),
+    ])
 
-    // ─── Recent activity (POS sales + manual entries combined) ───
-    // Fetch POS sales (have full item detail)
+    // ─── Credit order stats ───
+    const [creditOrderStats, creditOutstanding, creditPaidOrders, creditOverdueOrders, creditMonthOrders] = await Promise.all([
+      db.creditOrder.aggregate({
+        _sum: { totalAmount: true, remainingBalance: true, depositAmount: true },
+        _count: true,
+      }),
+      db.creditOrder.count({ where: { paymentStatus: { not: 'fully_paid' } } }),
+      db.creditOrder.count({ where: { paymentStatus: 'fully_paid' } }),
+      db.creditOrder.count({ where: { paymentStatus: 'overdue' } }),
+      db.creditOrder.count({ where: { createdAt: { gte: startOfMonth } } }),
+    ])
+
+    // ─── Combined totals (POS + Manual + Credit) ───
+    const totalSales = posTotalSales + manualTotal._count + creditTotal._count
+    const monthSales = posMonthSales + manualMonth._count + creditMonth._count
+    const totalRevenue = (posTotalRevenue._sum.total || 0) + (manualTotal._sum.amount || 0) + (creditTotal._sum.amount || 0)
+    const monthRevenue = (posMonthRevenue._sum.total || 0) + (manualMonth._sum.amount || 0) + (creditMonth._sum.amount || 0)
+
+    // ─── Recent activity (POS sales + manual entries + credit entries combined) ───
     const recentPosSales = await db.sale.findMany({
       take: 5,
       orderBy: { createdAt: 'desc' },
@@ -72,7 +94,6 @@ export async function GET() {
       },
     })
 
-    // Fetch recent manual entries (contribute to totals but were invisible before)
     const recentManualEntries = await db.salesEntry.findMany({
       where: { source: 'manual' },
       take: 5,
@@ -80,7 +101,14 @@ export async function GET() {
       include: { user: { select: { name: true } } },
     })
 
-    // Merge both into a unified recent sales list, sorted by date
+    const recentCreditEntries = await db.salesEntry.findMany({
+      where: { source: 'credit' },
+      take: 5,
+      orderBy: { date: 'desc' },
+      include: { user: { select: { name: true } } },
+    })
+
+    // Merge all into a unified recent sales list, sorted by date
     const recentSales = [
       ...recentPosSales.map(sale => ({
         id: sale.id,
@@ -102,6 +130,16 @@ export async function GET() {
         date: entry.date,
         itemCount: 0,
       })),
+      ...recentCreditEntries.map(entry => ({
+        id: entry.id,
+        type: 'credit' as const,
+        label: entry.productName,
+        total: entry.amount,
+        paymentMethod: 'credit',
+        user: entry.user,
+        date: entry.date,
+        itemCount: 0,
+      })),
     ]
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 8)
@@ -114,7 +152,7 @@ export async function GET() {
     const lowStockProducts = (lowStockProductsRaw as Array<{ quantity: number; minStock: number }>).filter(p => p.quantity > 0 && p.quantity <= p.minStock).length
     const outOfStockProducts = (lowStockProductsRaw as Array<{ quantity: number; minStock: number }>).filter(p => p.quantity === 0).length
 
-    // ─── Top products (from POS SaleItems only — manual entries don't have product breakdown) ───
+    // ─── Top products (from POS SaleItems only — manual/credit entries don't have product breakdown) ───
     const topProducts = await db.saleItem.groupBy({
       by: ['productId'],
       _sum: { quantity: true, total: true },
@@ -132,24 +170,27 @@ export async function GET() {
       product: topProductsData.find(p => p.id === item.productId) || null,
     }))
 
-    // ─── Daily sales last 7 days (POS sales + manual entries combined) ───
+    // ─── Daily sales last 7 days (POS + manual + credit combined) ───
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6)
     sevenDaysAgo.setHours(0, 0, 0, 0)
 
-    // Fetch POS sales for last 7 days
     const posRecentSalesData = await db.sale.findMany({
       where: { createdAt: { gte: sevenDaysAgo } },
       select: { createdAt: true, total: true },
     })
 
-    // Fetch manual entries for last 7 days
     const manualRecentEntries = await db.salesEntry.findMany({
       where: { source: 'manual', date: { gte: sevenDaysAgo } },
       select: { date: true, amount: true },
     })
 
-    // Build daily sales map combining both sources
+    const creditRecentEntries = await db.salesEntry.findMany({
+      where: { source: 'credit', date: { gte: sevenDaysAgo } },
+      select: { date: true, amount: true },
+    })
+
+    // Build daily sales map combining all sources
     const dailySales: Record<string, number> = {}
     for (let i = 0; i < 7; i++) {
       const d = new Date(sevenDaysAgo)
@@ -170,6 +211,13 @@ export async function GET() {
         dailySales[key] += entry.amount
       }
     }
+    // Add credit entries
+    for (const entry of creditRecentEntries) {
+      const key = entry.date.toISOString().split('T')[0]
+      if (dailySales[key] !== undefined) {
+        dailySales[key] += entry.amount
+      }
+    }
 
     return NextResponse.json({
       stats: {
@@ -183,6 +231,16 @@ export async function GET() {
         totalCategories,
         totalSuppliers,
         totalUsers,
+      },
+      credit: {
+        totalOrders: creditOrderStats._count,
+        totalCreditAmount: creditOrderStats._sum.totalAmount || 0,
+        totalOutstanding: creditOrderStats._sum.remainingBalance || 0,
+        totalPaid: creditOrderStats._sum.depositAmount || 0,
+        paidOrders: creditPaidOrders,
+        outstandingOrders: creditOutstanding,
+        overdueOrders: creditOverdueOrders,
+        monthOrders: creditMonthOrders,
       },
       recentSales,
       categoryBreakdown,

@@ -21,6 +21,7 @@ const SALES_TRACKING_EVENTS: DataChangeEvent[] = [
   'inventory-changed',   // stock changes could affect context
   'manual-entry-created',
   'settings-changed',    // currency/format changes
+  'credit-changed',      // credit order changes
 ]
 
 export function SalesTracking() {
@@ -30,7 +31,7 @@ export function SalesTracking() {
   const notifyDataChange = useAppStore((s) => s.notifyDataChange)
   const onDataChange = useAppStore((s) => s.onDataChange)
   const [entries, setEntries] = useState<any[]>([])
-  const [summary, setSummary] = useState({ totalAmount: 0, totalQuantity: 0, totalEntries: 0, posAmount: 0, posCount: 0, manualAmount: 0, manualCount: 0 })
+  const [summary, setSummary] = useState({ totalAmount: 0, totalQuantity: 0, totalEntries: 0, posAmount: 0, posCount: 0, manualAmount: 0, manualCount: 0, creditAmount: 0, creditCount: 0 })
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [addDialog, setAddDialog] = useState(false)
@@ -122,6 +123,15 @@ export function SalesTracking() {
           return
         }
         toast.success('Entry deleted')
+      } else if (deleteTarget.source === 'credit' && deleteTarget.creditOrderId) {
+        // Delete credit order through credits API (restores inventory)
+        const res = await authFetch(`/api/credits/${deleteTarget.creditOrderId}`, { method: 'DELETE' })
+        if (!res.ok) {
+          const data = await res.json()
+          toast.error(data.error || 'Failed to delete credit order')
+          return
+        }
+        toast.success('Credit order deleted and stock restored')
       } else if (deleteTarget.source === 'pos' && deleteTarget.saleId) {
         // Delete POS sale through sales API (restores inventory)
         const res = await authFetch(`/api/sales/${deleteTarget.saleId}`, { method: 'DELETE' })
@@ -151,7 +161,7 @@ export function SalesTracking() {
   return (
     <div className="space-y-4">
       {/* Summary — uses server-computed totals, not affected by pagination */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Amount</p>
@@ -175,6 +185,13 @@ export function SalesTracking() {
             <p className="text-sm text-muted-foreground text-amber-700">POS Sales</p>
             <p className="text-xl font-bold">KES {summary.posAmount.toLocaleString()}</p>
             <p className="text-xs text-muted-foreground">{summary.posCount} entries</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground text-purple-700">Credit Sales</p>
+            <p className="text-xl font-bold">KES {summary.creditAmount.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground">{summary.creditCount} entries</p>
           </CardContent>
         </Card>
         <Card>
@@ -251,6 +268,8 @@ export function SalesTracking() {
                           className={`capitalize text-xs ${
                             entry.source === 'pos'
                               ? 'border-amber-300 text-amber-800 dark:text-amber-300'
+                              : entry.source === 'credit'
+                              ? 'border-purple-300 text-purple-700 dark:text-purple-300'
                               : 'border-orange-300 text-orange-700 dark:text-orange-300'
                           }`}
                         >
@@ -325,6 +344,8 @@ export function SalesTracking() {
               <p className="text-sm">
                 {deleteTarget.source === 'manual' ? (
                   <>Are you sure you want to delete this manual entry? This will remove it from all sales totals and reports.</>
+                ) : deleteTarget.source === 'credit' ? (
+                  <>This will delete the entire credit order and <strong>restore all product stock</strong> that was deducted. All items in this order will be removed from sales tracking, dashboard totals, and reports.</>
                 ) : (
                   <>This will delete the entire sale and <strong>restore all product stock</strong> that was deducted. All items in this sale will be removed from sales tracking, dashboard totals, and reports.</>
                 )}
@@ -341,7 +362,7 @@ export function SalesTracking() {
             <Button variant="outline" onClick={() => { setDeleteDialog(false); setDeleteTarget(null) }}>Cancel</Button>
             <Button variant="destructive" onClick={deleteEntry}>
               <Trash2 className="h-4 w-4 mr-2" />
-              {deleteTarget?.source === 'manual' ? 'Delete Entry' : 'Delete Sale & Restore Stock'}
+              {deleteTarget?.source === 'manual' ? 'Delete Entry' : deleteTarget?.source === 'credit' ? 'Delete Credit Order & Restore Stock' : 'Delete Sale & Restore Stock'}
             </Button>
           </DialogFooter>
         </DialogContent>

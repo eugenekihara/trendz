@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
-import { BarChart3, ShoppingCart, Package, TrendingUp, ArrowRight, CreditCard, RefreshCw } from 'lucide-react'
+import { BarChart3, ShoppingCart, Package, TrendingUp, ArrowRight, CreditCard, RefreshCw, DollarSign, AlertTriangle, CheckCircle2, Wallet } from 'lucide-react'
 
 interface ReportData {
   period: string
@@ -23,6 +23,17 @@ interface ReportData {
     posRevenue: number
     manualSales: number
     manualRevenue: number
+    creditSales: number
+    creditRevenue: number
+  }
+  credit: {
+    periodOrders: number
+    periodCreditAmount: number
+    periodCollected: number
+    totalOutstanding: number
+    outstandingOrders: number
+    paidOrders: number
+    overdueOrders: number
   }
   dailySales: { date: string; total: number }[]
   topProducts: any[]
@@ -50,6 +61,7 @@ const REPORTS_REFRESH_EVENTS: DataChangeEvent[] = [
   'manual-entry-created',
   'supplier-changed',   // supplier-related report data
   'settings-changed',   // currency/format changes
+  'credit-changed',     // credit order changes
 ]
 
 export function Reports() {
@@ -131,7 +143,7 @@ export function Reports() {
     )
   }
 
-  const { summary, dailySales, topProducts, paymentMethodBreakdown, categoryBreakdown } = data
+  const { summary, credit, dailySales, topProducts, paymentMethodBreakdown, categoryBreakdown } = data
   const hasSalesData = summary.totalSales > 0
   const hasProductData = categoryBreakdown.some((c: any) => (c._count?.products || 0) > 0)
 
@@ -224,6 +236,45 @@ export function Reports() {
               <p className="text-2xl font-bold">KES {summary.averageSale.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Credit Analytics Cards */}
+      {credit && credit.periodOrders > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
+            <CreditCard className="h-4 w-4" /> Credit Sales Analytics
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <Card className="border-l-4 border-l-purple-500">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Credit Orders</p>
+                <p className="text-2xl font-bold">{credit.periodOrders}</p>
+                <p className="text-xs text-muted-foreground">KES {credit.periodCreditAmount.toLocaleString()} total</p>
+              </CardContent>
+            </Card>
+            <Card className="border-l-4 border-l-green-500">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Collected</p>
+                <p className="text-2xl font-bold text-green-600">KES {credit.periodCollected.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">{credit.paidOrders} fully paid</p>
+              </CardContent>
+            </Card>
+            <Card className="border-l-4 border-l-red-500">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Outstanding</p>
+                <p className="text-2xl font-bold text-red-600">KES {credit.totalOutstanding.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">{credit.outstandingOrders} orders pending</p>
+              </CardContent>
+            </Card>
+            <Card className="border-l-4 border-l-orange-500">
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Overdue</p>
+                <p className="text-2xl font-bold text-orange-600">{credit.overdueOrders}</p>
+                <p className="text-xs text-muted-foreground">Requires attention</p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 

@@ -11,7 +11,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
-    const [users, categories, products, suppliers, sales, saleItems, salesEntries, settings, notifications, auditLogs] = await Promise.all([
+    const [users, categories, products, suppliers, sales, saleItems, salesEntries, creditOrders, creditOrderItems, creditPayments, settings, notifications, auditLogs] = await Promise.all([
       db.user.findMany({ select: { id: true, email: true, name: true, role: true, avatar: true, phone: true, active: true, theme: true, language: true, notifySales: true, notifyInventory: true, notifyTasks: true, createdAt: true, updatedAt: true } }),
       db.category.findMany(),
       db.product.findMany(),
@@ -19,6 +19,9 @@ export async function GET() {
       db.sale.findMany(),
       db.saleItem.findMany(),
       db.salesEntry.findMany(),
+      db.creditOrder.findMany(),
+      db.creditOrderItem.findMany(),
+      db.creditPayment.findMany(),
       db.setting.findMany(),
       db.notification.findMany(),
       db.auditLog.findMany(),
@@ -26,8 +29,8 @@ export async function GET() {
 
     return NextResponse.json({
       exportDate: new Date().toISOString(),
-      version: '1.0',
-      data: { users, categories, products, suppliers, sales, saleItems, salesEntries, settings, notifications, auditLogs },
+      version: '1.1',
+      data: { users, categories, products, suppliers, sales, saleItems, salesEntries, creditOrders, creditOrderItems, creditPayments, settings, notifications, auditLogs },
     }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Backup GET error:', error)
@@ -47,12 +50,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid backup data' }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
-    // Clear existing data and restore in a transaction for atomicity
-    const { users, categories, products, suppliers, sales, saleItems, salesEntries, settings, notifications } = backup.data
+    const { users, categories, products, suppliers, sales, saleItems, salesEntries, creditOrders, creditOrderItems, creditPayments, settings, notifications } = backup.data
 
     await db.$transaction(async (tx) => {
       // Delete in order of dependencies
       await tx.auditLog.deleteMany()
+      await tx.creditPayment.deleteMany()
+      await tx.creditOrderItem.deleteMany()
+      await tx.creditOrder.deleteMany()
       await tx.stockMove.deleteMany()
       await tx.salesEntry.deleteMany()
       await tx.saleItem.deleteMany()
@@ -74,6 +79,9 @@ export async function POST(request: Request) {
       if (sales?.length) await tx.sale.createMany({ data: sales })
       if (saleItems?.length) await tx.saleItem.createMany({ data: saleItems })
       if (salesEntries?.length) await tx.salesEntry.createMany({ data: salesEntries })
+      if (creditOrders?.length) await tx.creditOrder.createMany({ data: creditOrders })
+      if (creditOrderItems?.length) await tx.creditOrderItem.createMany({ data: creditOrderItems })
+      if (creditPayments?.length) await tx.creditPayment.createMany({ data: creditPayments })
       if (notifications?.length) await tx.notification.createMany({ data: notifications })
     })
 

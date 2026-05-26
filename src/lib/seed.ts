@@ -140,6 +140,9 @@ export async function createInitialAdmin(data: {
  */
 export async function clearBusinessData() {
   await db.auditLog.deleteMany()
+  await db.creditPayment.deleteMany()
+  await db.creditOrderItem.deleteMany()
+  await db.creditOrder.deleteMany()
   await db.stockMove.deleteMany()
   await db.salesEntry.deleteMany()
   await db.saleItem.deleteMany()

@@ -56,6 +56,7 @@ const INVENTORY_REFRESH_EVENTS: DataChangeEvent[] = [
   'category-changed',
   'supplier-changed',   // supplier info in product details
   'settings-changed',   // settings like low stock threshold
+  'credit-changed',     // credit orders affect stock
 ]
 
 export function Inventory() {

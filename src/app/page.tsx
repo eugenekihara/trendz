@@ -14,6 +14,7 @@ import { Reports } from '@/components/app/reports'
 import { Notifications } from '@/components/app/notifications'
 import { Settings } from '@/components/app/settings'
 import { StaffSettings } from '@/components/app/staff-settings'
+import { CreditManagement } from '@/components/app/credit-management'
 
 type AppView = 'loading' | 'setup' | 'login' | 'app'
 
@@ -54,6 +55,8 @@ export default function Home() {
           return <SalesTracking />
         case 'suppliers':
           return user.role === 'admin' ? <Suppliers /> : <Inventory />
+        case 'credits':
+          return <CreditManagement />
         case 'reports':
           return user.role === 'admin' ? <Reports /> : <Inventory />
         case 'settings':

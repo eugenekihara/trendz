@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { TrendingUp, Package, ShoppingCart, Truck, BarChart3, ShoppingBag, ArrowRight } from 'lucide-react'
+import { TrendingUp, Package, ShoppingCart, Truck, BarChart3, ShoppingBag, ArrowRight, CreditCard, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import { Button } from '@/components/ui/button'
 
@@ -21,9 +21,19 @@ interface DashboardData {
     totalSuppliers: number
     totalUsers: number
   }
+  credit: {
+    totalOrders: number
+    totalCreditAmount: number
+    totalOutstanding: number
+    totalPaid: number
+    paidOrders: number
+    outstandingOrders: number
+    overdueOrders: number
+    monthOrders: number
+  }
   recentSales: Array<{
     id: string
-    type: 'pos' | 'manual'
+    type: 'pos' | 'manual' | 'credit'
     label: string
     total: number
     paymentMethod: string
@@ -51,6 +61,7 @@ const DASHBOARD_EVENTS: DataChangeEvent[] = [
   'supplier-changed',    // supplier count changes
   'settings-changed',    // currency/shop name changes
   'user-changed',        // user count changes
+  'credit-changed',      // credit order changes
 ]
 
 export function Dashboard() {
@@ -112,7 +123,7 @@ export function Dashboard() {
 
   if (!data) return <div className="text-center text-muted-foreground">Failed to load dashboard</div>
 
-  const { stats, recentSales, categoryBreakdown, topProducts, dailySales } = data
+  const { stats, credit, recentSales, categoryBreakdown, topProducts, dailySales } = data
 
   const hasSalesData = stats.totalSales > 0
   const hasProductData = stats.totalProducts > 0
@@ -123,6 +134,12 @@ export function Dashboard() {
     { title: 'Products', value: stats.totalProducts, sub: `${stats.lowStockProducts} low, ${stats.outOfStockProducts} out`, icon: Package, color: 'text-blue-600' },
     { title: 'Categories', value: stats.totalCategories, sub: `${stats.totalSuppliers} suppliers`, icon: Truck, color: 'text-orange-600' },
   ]
+
+  const creditCards = credit ? [
+    { title: 'Outstanding Credit', value: `KES ${credit.totalOutstanding.toLocaleString()}`, sub: `${credit.outstandingOrders} orders pending`, icon: CreditCard, color: 'text-red-600' },
+    { title: 'Credit Paid', value: `${credit.paidOrders}`, sub: `KES ${credit.totalPaid.toLocaleString()} collected`, icon: CheckCircle2, color: 'text-green-600' },
+    { title: 'Overdue', value: `${credit.overdueOrders}`, sub: `${credit.monthOrders} new this month`, icon: AlertTriangle, color: 'text-orange-600' },
+  ] : []
 
   const pieData = categoryBreakdown
     .filter((c: any) => (c._count?.products || 0) > 0)
@@ -150,6 +167,26 @@ export function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Credit Summary Cards */}
+      {creditCards.length > 0 && credit.totalOrders > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {creditCards.map((card) => (
+            <Card key={card.title} className="border-l-4 border-l-amber-500">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">{card.title}</p>
+                    <p className={`text-2xl font-bold mt-1`}>{card.value}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
+                  </div>
+                  <card.icon className={`h-8 w-8 ${card.color} opacity-80`} />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Empty State - No Data at All */}
       {!hasSalesData && !hasProductData && (
@@ -303,10 +340,12 @@ export function Dashboard() {
                           className={`text-xs capitalize ${
                             sale.type === 'manual'
                               ? 'border-orange-300 text-orange-700 dark:text-orange-300'
+                              : sale.type === 'credit'
+                              ? 'border-purple-300 text-purple-700 dark:text-purple-300'
                               : 'border-amber-300 text-amber-800 dark:text-amber-300'
                           }`}
                         >
-                          {sale.type === 'manual' ? 'Manual' : sale.paymentMethod}
+                          {sale.type === 'manual' ? 'Manual' : sale.type === 'credit' ? 'Credit' : sale.paymentMethod}
                         </Badge>
                       </div>
                     </div>

@@ -11,7 +11,7 @@ interface User {
   phone?: string | null
 }
 
-type ViewPage = 'dashboard' | 'inventory' | 'sales-pos' | 'sales-tracking' | 'suppliers' | 'reports' | 'settings' | 'staff-settings' | 'notifications'
+type ViewPage = 'dashboard' | 'inventory' | 'sales-pos' | 'sales-tracking' | 'suppliers' | 'credits' | 'reports' | 'settings' | 'staff-settings' | 'notifications'
 
 // Data change events that modules can emit to notify other modules
 export type DataChangeEvent =
@@ -26,6 +26,7 @@ export type DataChangeEvent =
   | 'supplier-changed'
   | 'settings-changed'
   | 'user-changed'
+  | 'credit-changed'
 
 interface AppState {
   user: User | null

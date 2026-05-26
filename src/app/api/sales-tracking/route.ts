@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
     // Fetch paginated entries AND aggregate summary in parallel
     // Summary is computed over ALL matching entries, not just the current page
-    const [entries, total, summary, posSummary] = await Promise.all([
+    const [entries, total, summary, posSummary, creditSummary] = await Promise.all([
       db.salesEntry.findMany({
         where,
         include: { user: { select: { id: true, name: true } } },
@@ -52,11 +52,19 @@ export async function GET(request: Request) {
         _sum: { amount: true },
         _count: true,
       }),
+      // Credit source summary
+      db.salesEntry.aggregate({
+        where: { ...where, source: 'credit' },
+        _sum: { amount: true },
+        _count: true,
+      }),
     ])
 
-    // Compute manual entry totals by subtraction (avoids a 5th query)
-    const manualAmount = (summary._sum.amount || 0) - (posSummary._sum.amount || 0)
-    const manualCount = summary._count - posSummary._count
+    // Compute manual entry totals by subtraction (avoids extra queries)
+    const creditAmount = creditSummary._sum.amount || 0
+    const creditCount = creditSummary._count
+    const manualAmount = (summary._sum.amount || 0) - (posSummary._sum.amount || 0) - creditAmount
+    const manualCount = summary._count - posSummary._count - creditCount
 
     return NextResponse.json({
       entries,
@@ -71,8 +79,10 @@ export async function GET(request: Request) {
         totalEntries: summary._count,
         posAmount: posSummary._sum.amount || 0,
         posCount: posSummary._count,
-        manualAmount,
-        manualCount,
+        creditAmount,
+        creditCount,
+        manualAmount: Math.max(0, manualAmount),
+        manualCount: Math.max(0, manualCount),
       },
     }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {

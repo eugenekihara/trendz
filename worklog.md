@@ -1,27 +1,55 @@
 ---
 Task ID: 1
 Agent: Main Agent
-Task: Full system-wide data alignment and synchronization across all 5 modules
+Task: Add Credit/Customer Deposit Management feature to Trendz
 
 Work Log:
-- Read all 13+ source files (5 components, 10+ API routes, schema, store)
-- Mapped complete data flow: Sale → SalesEntry, SaleItem → Product quantity, Dashboard ← Sale + SalesEntry
-- Identified 6 synchronization gaps
-- FIX 1: Changed POS SalesEntry creation from single aggregated record to individual records per SaleItem with proportional discount distribution
-- FIX 2: Created /api/sales/[id]/route.ts DELETE endpoint with full rollback (restore inventory, delete SalesEntry mirrors, create stock moves, audit log)
-- FIX 3: Created /api/sales-tracking/[id]/route.ts DELETE endpoint for manual entries with admin-only access
-- FIX 4: Updated Dashboard API to include manual entries in recent sales list + added outOfStockProducts stat
-- FIX 5: Updated Sales Tracking UI with delete functionality (manual entries deleted individually, POS entries deleted via sale deletion with stock restore)
-- FIX 6: Verified all CRUD operations emit proper notifyDataChange events and all modules listen for relevant events
-- Build passes successfully with all new routes registered
+- Explored full codebase structure (Prisma schema, store, all 5 components, all API routes, auth, navigation)
+- Added 3 new Prisma models: CreditOrder, CreditOrderItem, CreditPayment
+- Added creditOrderId field to SalesEntry model
+- Added relations to User, Product, SalesEntry models
+- Ran prisma db push to apply schema changes
+- Created 3 new API routes:
+  - /api/credits (GET: list+summary, POST: create credit order with inventory reduction)
+  - /api/credits/[id] (GET: single order, PUT: update order, DELETE: delete+restore stock)
+  - /api/credits/[id]/payments (POST: add payment, auto-update status)
+- Updated store.ts: Added 'credits' to ViewPage type, 'credit-changed' to DataChangeEvent
+- Created credit-management.tsx UI component with:
+  - Summary cards (Outstanding, Total Credit, Paid, Overdue)
+  - Search/filter by customer name/phone and payment status
+  - Create credit order dialog with product selection cart
+  - Record payment dialog with balance tracking
+  - Payment history dialog
+  - Credit order detail dialog
+  - Edit dialog (admin) and delete dialog with stock restoration
+  - Access control (staff: own orders, admin: all)
+- Added Credits navigation item to app-layout.tsx sidebar
+- Added CreditManagement route to page.tsx
+- Integrated credit data into Dashboard API (credit stats + credit SalesEntry source)
+- Added Credit Summary Cards to Dashboard UI
+- Integrated credit data into Reports API (credit analytics section)
+- Added Credit Analytics Cards to Reports UI
+- Updated Sales Tracking API to include credit source breakdown
+- Added Credit Sales card to Sales Tracking UI summary
+- Added 'credit' source badge (purple) to Sales Tracking entries
+- Added credit-changed event to Dashboard, Reports, Sales Tracking, Inventory event lists
+- Updated backup route to include credit tables (export + restore)
+- Updated clear-data utility to include credit tables
+- Changed PrismaClient log level from ['query'] to ['error', 'warn'] to prevent server crashes from query log flooding
+- Successfully tested all API endpoints individually:
+  - GET /api/credits - Returns credit orders with summary
+  - POST /api/credits - Creates credit order, reduces inventory, creates SalesEntry mirrors
+  - POST /api/credits/[id]/payments - Records payments, auto-updates status
+  - Payment status progression: deposit_paid → partially_paid → fully_paid verified
+  - Dashboard includes credit data (outstanding, paid, overdue)
+  - Reports includes credit analytics section
+  - Sales Tracking shows credit entries with purple source badge
 
 Stage Summary:
-- All 5 modules now derive data from the same Prisma/SQLite database
-- POS sales create individual SalesEntry records per item (not aggregated) — Sales Tracking shows per-product detail
-- Discount is proportionally distributed across items so sum of POS SalesEntry amounts = Sale.total (data alignment preserved)
-- Sale deletion fully reverses effects: inventory restored, SalesEntry mirrors deleted, audit trail created
-- Manual entry deletion available for admins
-- Dashboard recent sales now includes both POS and manual entries
-- All modules refresh instantly via notifyDataChange/onDataChange event system
-- All API routes have force-dynamic + Cache-Control: no-store
-- All components have visibilitychange + onDataChange listeners
+- Complete Credit/Customer Deposit Management feature implemented
+- All 5 modules (Dashboard, Sales POS, Sales Tracking, Inventory, Reports) are integrated with credit data
+- Credit orders reduce inventory on creation and restore on deletion
+- SalesEntry mirrors created for credit orders (source='credit')
+- Payment history tracking with automatic status updates
+- Access control: staff can create/view own, admin can view/edit/delete all
+- Build succeeds cleanly with all new routes
