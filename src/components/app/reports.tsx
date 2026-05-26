@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -39,6 +39,7 @@ interface ReportData {
   topProducts: any[]
   paymentMethodBreakdown: { method: string; total: number; count: number }[]
   categoryBreakdown: any[]
+  _error?: string
 }
 
 const COLORS = ['#92400e', '#b45309', '#d97706', '#f59e0b', '#78350f', '#a16207', '#ca8a04', '#854d0e']
@@ -59,10 +60,22 @@ const REPORTS_REFRESH_EVENTS: DataChangeEvent[] = [
   'inventory-changed',
   'category-changed',
   'manual-entry-created',
-  'supplier-changed',   // supplier-related report data
-  'settings-changed',   // currency/format changes
-  'credit-changed',     // credit order changes
+  'supplier-changed',
+  'settings-changed',
+  'credit-changed',
 ]
+
+// Safe number formatter — never crashes on null/undefined
+function safeNum(val: any, fallback = 0): number {
+  if (val === null || val === undefined) return fallback
+  const n = Number(val)
+  return isNaN(n) ? fallback : n
+}
+
+function safeLocaleString(val: any, fallback = '0'): string {
+  const n = safeNum(val, -1)
+  return n === -1 ? fallback : n.toLocaleString()
+}
 
 export function Reports() {
   const authFetch = useAppStore((s) => s.authFetch)
@@ -71,21 +84,53 @@ export function Reports() {
   const [data, setData] = useState<ReportData | null>(null)
   const [period, setPeriod] = useState('month')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
+  // Prevent concurrent fetches and rapid re-fetches
+  const fetchingRef = useRef(false)
+  const lastFetchRef = useRef(0)
+  const MIN_FETCH_INTERVAL = 2000
+
   const fetchReport = useCallback(async (showRefresh = false) => {
+    if (fetchingRef.current) return
+    const now = Date.now()
+    if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+
+    fetchingRef.current = true
+    lastFetchRef.current = now
+
     try {
       if (showRefresh) setRefreshing(true)
+      setError(null)
       const res = await authFetch(`/api/reports?period=${period}`)
       if (res.ok) {
         const reportData = await res.json()
-        setData(reportData)
+        if (reportData && reportData.summary) {
+          setData(reportData)
+          if (reportData._error) {
+            setError(reportData._error)
+          }
+        } else {
+          // Invalid structure — set default data
+          setData(null)
+          setError('Received invalid data from server')
+        }
+      } else {
+        let errorMsg = `Failed to load reports (${res.status})`
+        try {
+          const errBody = await res.json()
+          if (errBody?.error) errorMsg = errBody.error
+        } catch {}
+        setError(errorMsg)
       }
-    } catch (error) {
-      console.error('Fetch report error:', error)
+    } catch (err) {
+      console.error('Fetch report error:', err)
+      setError('Network error — please check your connection')
     } finally {
       setLoading(false)
       setRefreshing(false)
+      fetchingRef.current = false
     }
   }, [authFetch, period])
 
@@ -93,20 +138,28 @@ export function Reports() {
     fetchReport()
   }, [fetchReport])
 
-  // Refresh data when tab becomes visible (covers SPA navigation)
+  // Refresh data when tab becomes visible (with debounce)
   useEffect(() => {
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') fetchReport()
+      if (document.visibilityState === 'visible') {
+        const now = Date.now()
+        if (now - lastFetchRef.current > MIN_FETCH_INTERVAL) {
+          fetchReport()
+        }
+      }
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [fetchReport])
 
-  // Subscribe to cross-module data changes for instant refresh
+  // Subscribe to cross-module data changes for instant refresh (with debounce)
   useEffect(() => {
     const unsubscribe = onDataChange((event: DataChangeEvent) => {
       if (REPORTS_REFRESH_EVENTS.includes(event)) {
-        fetchReport()
+        const now = Date.now()
+        if (now - lastFetchRef.current > MIN_FETCH_INTERVAL) {
+          fetchReport()
+        }
       }
     })
     return unsubscribe
@@ -133,7 +186,7 @@ export function Reports() {
               <BarChart3 className="h-10 w-10 text-amber-700" />
             </div>
             <h3 className="text-lg font-semibold">Failed to Load Reports</h3>
-            <p className="text-sm text-muted-foreground">There was an error loading report data. Please try again.</p>
+            <p className="text-sm text-muted-foreground">{error || 'There was an error loading report data. Please try again.'}</p>
             <Button variant="outline" onClick={() => fetchReport(true)}>
               <RefreshCw className="h-4 w-4 mr-2" /> Retry
             </Button>
@@ -144,22 +197,22 @@ export function Reports() {
   }
 
   const { summary, credit, dailySales, topProducts, paymentMethodBreakdown, categoryBreakdown } = data
-  const hasSalesData = summary.totalSales > 0
-  const hasProductData = categoryBreakdown.some((c: any) => (c._count?.products || 0) > 0)
+  const hasSalesData = safeNum(summary?.totalSales) > 0
+  const hasProductData = (categoryBreakdown || []).some((c: any) => (c._count?.products || 0) > 0)
 
   // Pie chart data for payment methods
-  const paymentPieData = paymentMethodBreakdown.map(p => ({
-    name: PAYMENT_LABELS[p.method] || p.method,
-    value: p.count,
-    total: p.total,
+  const paymentPieData = (paymentMethodBreakdown || []).map(p => ({
+    name: PAYMENT_LABELS[p.method] || p.method || 'Unknown',
+    value: safeNum(p.count),
+    total: safeNum(p.total),
   }))
 
-  // Category bar chart data — use period revenue when available, fallback to product count
-  const categoryChartData = categoryBreakdown
+  // Category bar chart data
+  const categoryChartData = (categoryBreakdown || [])
     .map((c: any) => ({
-      name: c.name,
-      revenue: c.periodRevenue || 0,
-      itemsSold: c.periodItemsSold || 0,
+      name: c.name || 'Unknown',
+      revenue: safeNum(c.periodRevenue),
+      itemsSold: safeNum(c.periodItemsSold),
       products: c._count?.products || 0,
     }))
     .filter((c: any) => c.products > 0 || c.revenue > 0)
@@ -183,6 +236,19 @@ export function Reports() {
           </Button>
         </div>
       </div>
+
+      {/* Error banner (partial data loaded) */}
+      {error && data && (
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="h-4 w-4" />
+            <span>Some report data may be unavailable. {error}</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => fetchReport(true)}>
+            <RefreshCw className="h-3 w-3 mr-1" /> Retry
+          </Button>
+        </div>
+      )}
 
       {/* Empty State - No Data at All */}
       {!hasSalesData && !hasProductData && (
@@ -215,32 +281,32 @@ export function Reports() {
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Total Revenue</p>
-              <p className="text-2xl font-bold">KES {summary.totalRevenue.toLocaleString()}</p>
+              <p className="text-2xl font-bold">KES {safeLocaleString(summary?.totalRevenue)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Total Sales</p>
-              <p className="text-2xl font-bold">{summary.totalSales}</p>
+              <p className="text-2xl font-bold">{safeNum(summary?.totalSales)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Items Sold</p>
-              <p className="text-2xl font-bold">{summary.totalItemsSold}</p>
+              <p className="text-2xl font-bold">{safeNum(summary?.totalItemsSold)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">Average Sale</p>
-              <p className="text-2xl font-bold">KES {summary.averageSale.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+              <p className="text-2xl font-bold">KES {safeLocaleString(summary?.averageSale)}</p>
             </CardContent>
           </Card>
         </div>
       )}
 
       {/* Credit Analytics Cards */}
-      {credit && credit.periodOrders > 0 && (
+      {credit && safeNum(credit.periodOrders) > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-muted-foreground mb-2 flex items-center gap-2">
             <CreditCard className="h-4 w-4" /> Credit Sales Analytics
@@ -249,28 +315,28 @@ export function Reports() {
             <Card className="border-l-4 border-l-purple-500">
               <CardContent className="p-4">
                 <p className="text-sm text-muted-foreground">Credit Orders</p>
-                <p className="text-2xl font-bold">{credit.periodOrders}</p>
-                <p className="text-xs text-muted-foreground">KES {credit.periodCreditAmount.toLocaleString()} total</p>
+                <p className="text-2xl font-bold">{safeNum(credit?.periodOrders)}</p>
+                <p className="text-xs text-muted-foreground">KES {safeLocaleString(credit?.periodCreditAmount)} total</p>
               </CardContent>
             </Card>
             <Card className="border-l-4 border-l-green-500">
               <CardContent className="p-4">
                 <p className="text-sm text-muted-foreground">Collected</p>
-                <p className="text-2xl font-bold text-green-600">KES {credit.periodCollected.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">{credit.paidOrders} fully paid</p>
+                <p className="text-2xl font-bold text-green-600">KES {safeLocaleString(credit?.periodCollected)}</p>
+                <p className="text-xs text-muted-foreground">{safeNum(credit?.paidOrders)} fully paid</p>
               </CardContent>
             </Card>
             <Card className="border-l-4 border-l-red-500">
               <CardContent className="p-4">
                 <p className="text-sm text-muted-foreground">Outstanding</p>
-                <p className="text-2xl font-bold text-red-600">KES {credit.totalOutstanding.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">{credit.outstandingOrders} orders pending</p>
+                <p className="text-2xl font-bold text-red-600">KES {safeLocaleString(credit?.totalOutstanding)}</p>
+                <p className="text-xs text-muted-foreground">{safeNum(credit?.outstandingOrders)} orders pending</p>
               </CardContent>
             </Card>
             <Card className="border-l-4 border-l-orange-500">
               <CardContent className="p-4">
                 <p className="text-sm text-muted-foreground">Overdue</p>
-                <p className="text-2xl font-bold text-orange-600">{credit.overdueOrders}</p>
+                <p className="text-2xl font-bold text-orange-600">{safeNum(credit?.overdueOrders)}</p>
                 <p className="text-xs text-muted-foreground">Requires attention</p>
               </CardContent>
             </Card>
@@ -293,13 +359,13 @@ export function Reports() {
             </CardHeader>
             <CardContent>
               <div className="h-64">
-                {hasSalesData && dailySales.length > 0 ? (
+                {hasSalesData && (dailySales || []).length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dailySales}>
+                    <LineChart data={dailySales || []}>
                       <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(v: number) => [`KES ${v.toLocaleString()}`, 'Revenue']} />
+                      <Tooltip formatter={(v: number) => [`KES ${safeLocaleString(v)}`, 'Revenue']} />
                       <Line type="monotone" dataKey="total" stroke="#92400e" strokeWidth={2} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -316,7 +382,7 @@ export function Reports() {
             </CardContent>
           </Card>
 
-          {/* Sales by Category (period-aware) */}
+          {/* Sales by Category */}
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-base">Sales by Category</CardTitle></CardHeader>
             <CardContent>
@@ -327,7 +393,7 @@ export function Reports() {
                       <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                       <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(v: number, name: string) => [name === 'revenue' ? `KES ${v.toLocaleString()}` : v, name === 'revenue' ? 'Revenue' : 'Items Sold']} />
+                      <Tooltip formatter={(v: number, name: string) => [name === 'revenue' ? `KES ${safeLocaleString(v)}` : v, name === 'revenue' ? 'Revenue' : 'Items Sold']} />
                       <Bar dataKey="revenue" fill="#92400e" radius={[4, 4, 0, 0]} name="Revenue" />
                     </BarChart>
                   </ResponsiveContainer>
@@ -354,8 +420,8 @@ export function Reports() {
             <CardHeader className="pb-2"><CardTitle className="text-base">Top Selling Products</CardTitle></CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {topProducts.length > 0 ? (
-                  topProducts.map((item: any, i: number) => (
+                {(topProducts || []).length > 0 ? (
+                  (topProducts || []).map((item: any, i: number) => (
                     <div key={i} className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <span className="text-sm font-medium text-muted-foreground w-6">{i + 1}.</span>
@@ -365,8 +431,8 @@ export function Reports() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-medium">KES {(item._sum.total || 0).toLocaleString()}</p>
-                        <p className="text-xs text-muted-foreground">{item._sum.quantity || 0} sold</p>
+                        <p className="text-sm font-medium">KES {safeLocaleString(item._sum?.total)}</p>
+                        <p className="text-xs text-muted-foreground">{safeNum(item._sum?.quantity)} sold</p>
                       </div>
                     </div>
                   ))
@@ -402,7 +468,7 @@ export function Reports() {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip formatter={(v: number, name: string, props: any) => [`${v} transactions (KES ${(props.payload.total || 0).toLocaleString()})`, name]} />
+                      <Tooltip formatter={(v: number, name: string, props: any) => [`${v} transactions (KES ${safeLocaleString(props.payload?.total)})`, name]} />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -44,6 +44,7 @@ interface DashboardData {
   categoryBreakdown: any[]
   topProducts: any[]
   dailySales: { date: string; total: number }[]
+  _error?: string
 }
 
 const COLORS = ['#92400e', '#b45309', '#d97706', '#f59e0b', '#78350f', '#a16207', '#ca8a04', '#854d0e']
@@ -66,6 +67,7 @@ const DASHBOARD_EVENTS: DataChangeEvent[] = [
 
 // Safe number formatter — never crashes on null/undefined
 function safeNum(val: any, fallback = 0): number {
+  if (val === null || val === undefined) return fallback
   const n = Number(val)
   return isNaN(n) ? fallback : n
 }
@@ -73,6 +75,25 @@ function safeNum(val: any, fallback = 0): number {
 function safeLocaleString(val: any, fallback = '0'): string {
   const n = safeNum(val, -1)
   return n === -1 ? fallback : n.toLocaleString()
+}
+
+// Default empty dashboard data for initial/fallback state
+function getDefaultData(): DashboardData {
+  return {
+    stats: {
+      totalProducts: 0, lowStockProducts: 0, outOfStockProducts: 0,
+      totalSales: 0, monthSales: 0, totalRevenue: 0, monthRevenue: 0,
+      totalCategories: 0, totalSuppliers: 0, totalUsers: 0,
+    },
+    credit: {
+      totalOrders: 0, totalCreditAmount: 0, totalOutstanding: 0, totalPaid: 0,
+      paidOrders: 0, outstandingOrders: 0, overdueOrders: 0, monthOrders: 0,
+    },
+    recentSales: [],
+    categoryBreakdown: [],
+    topProducts: [],
+    dailySales: [],
+  }
 }
 
 export function Dashboard() {
@@ -84,50 +105,113 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
+  // Prevent concurrent fetches and rapid re-fetches
+  const fetchingRef = useRef(false)
+  const lastFetchRef = useRef(0)
+  const MIN_FETCH_INTERVAL = 2000 // ms between fetches
+  const mountedRef = useRef(true)
+
   const fetchDashboard = useCallback(async (showRefresh = false) => {
+    // Prevent concurrent fetches
+    if (fetchingRef.current) return
+    // Prevent rapid re-fetches (debounce)
+    const now = Date.now()
+    if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+
+    fetchingRef.current = true
+    lastFetchRef.current = now
+
     try {
       if (showRefresh) setRefreshing(true)
       setError(null)
+
       const res = await authFetch('/api/dashboard')
+
+      if (!mountedRef.current) return
+
       if (res.ok) {
         const json = await res.json()
         // Validate minimum structure to prevent rendering crashes
         if (json && json.stats) {
           setData(json)
+          // If API returned partial error, show a subtle warning
+          if (json._error) {
+            setError(json._error)
+          }
         } else {
-          setError('Received invalid data from server')
+          // API returned 200 but invalid structure — use defaults
+          console.warn('Dashboard: received invalid data structure, using defaults')
+          setData(getDefaultData())
+          setError('Received incomplete data from server')
         }
       } else {
-        const errBody = await res.json().catch(() => null)
-        setError(errBody?.error || `Failed to load dashboard (${res.status})`)
+        // Try to parse error body
+        let errorMsg = `Failed to load dashboard (${res.status})`
+        try {
+          const errBody = await res.json()
+          if (errBody?.error) errorMsg = errBody.error
+        } catch {}
+
+        // If we already have data, keep showing it with a warning
+        if (data) {
+          setError(errorMsg)
+        } else {
+          setError(errorMsg)
+          // Use default data so the page renders something useful
+          setData(getDefaultData())
+        }
       }
     } catch (err) {
       console.error('Dashboard fetch error:', err)
-      setError('Network error — please check your connection')
+      if (!mountedRef.current) return
+
+      const errorMsg = 'Network error — please check your connection'
+      if (data) {
+        setError(errorMsg)
+      } else {
+        setError(errorMsg)
+        setData(getDefaultData())
+      }
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      if (mountedRef.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
+      fetchingRef.current = false
     }
-  }, [authFetch])
+  }, [authFetch]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Initial fetch
   useEffect(() => {
+    mountedRef.current = true
     fetchDashboard()
-  }, [fetchDashboard])
+    return () => {
+      mountedRef.current = false
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Refresh data when tab becomes visible
+  // Refresh data when tab becomes visible (with debounce)
   useEffect(() => {
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') fetchDashboard()
+      if (document.visibilityState === 'visible') {
+        const now = Date.now()
+        if (now - lastFetchRef.current > MIN_FETCH_INTERVAL) {
+          fetchDashboard()
+        }
+      }
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
   }, [fetchDashboard])
 
-  // Subscribe to cross-module data changes for instant refresh
+  // Subscribe to cross-module data changes for instant refresh (with debounce)
   useEffect(() => {
     const unsubscribe = onDataChange((event: DataChangeEvent) => {
       if (DASHBOARD_EVENTS.includes(event)) {
-        fetchDashboard()
+        const now = Date.now()
+        if (now - lastFetchRef.current > MIN_FETCH_INTERVAL) {
+          fetchDashboard()
+        }
       }
     })
     return unsubscribe
@@ -154,7 +238,7 @@ export function Dashboard() {
     )
   }
 
-  // Error state with retry
+  // Full error state with retry (only if no data at all)
   if (error && !data) {
     return (
       <Card>
@@ -174,7 +258,7 @@ export function Dashboard() {
     )
   }
 
-  // Fallback if data is somehow still null (shouldn't happen with above checks)
+  // Fallback if data is somehow still null
   if (!data) {
     return (
       <Card>
@@ -232,6 +316,19 @@ export function Dashboard() {
       {refreshing && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <RefreshCw className="h-3 w-3 animate-spin" /> Refreshing...
+        </div>
+      )}
+
+      {/* Error banner (partial data loaded) */}
+      {error && data && (
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="h-4 w-4" />
+            <span>Some data may be unavailable. {error}</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => fetchDashboard(true)}>
+            <RefreshCw className="h-3 w-3 mr-1" /> Retry
+          </Button>
         </div>
       )}
 
@@ -445,13 +542,6 @@ export function Dashboard() {
               </div>
             </CardContent>
           </Card>
-        </div>
-      )}
-
-      {/* Error banner at bottom if partial data loaded */}
-      {error && data && (
-        <div className="text-center text-xs text-muted-foreground">
-          Some data may be outdated. <Button variant="link" className="text-xs h-auto p-0" onClick={() => fetchDashboard(true)}>Refresh</Button>
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,17 @@ import {
   User,
 } from 'lucide-react'
 import { toast } from 'sonner'
+
+function safeNum(val: any, fallback = 0): number {
+  if (val === null || val === undefined) return fallback
+  const n = Number(val)
+  return isNaN(n) ? fallback : n
+}
+
+function safeLocaleString(val: any, fallback = '0'): string {
+  const n = safeNum(val, -1)
+  return n === -1 ? fallback : n.toLocaleString()
+}
 
 // All events that should trigger a Credit Management refresh
 const CREDIT_EVENTS: DataChangeEvent[] = [
@@ -62,8 +73,7 @@ export function CreditManagement() {
   const notifyDataChange = useAppStore((s) => s.notifyDataChange)
   const onDataChange = useAppStore((s) => s.onDataChange)
 
-  const [creditOrders, setCreditOrders] = useState<any[]>([])
-  const [summary, setSummary] = useState({
+  const defaultSummary = {
     totalOutstanding: 0,
     totalCreditAmount: 0,
     totalDepositPaid: 0,
@@ -73,9 +83,18 @@ export function CreditManagement() {
     partiallyPaidCount: 0,
     overdueCount: 0,
     totalOrders: 0,
-  })
+  }
+
+  const [creditOrders, setCreditOrders] = useState<any[]>([])
+  const [summary, setSummary] = useState(defaultSummary)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Debounce refs
+  const fetchingRef = useRef(false)
+  const lastFetchRef = useRef(0)
+  const MIN_FETCH_INTERVAL = 2000
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('all')
@@ -118,7 +137,14 @@ export function CreditManagement() {
   })
 
   const fetchCreditOrders = useCallback(async (showRefresh = false) => {
+    if (fetchingRef.current) return
+    const now = Date.now()
+    if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+    fetchingRef.current = true
+    lastFetchRef.current = now
+
     try {
+      setError(null)
       if (showRefresh) setRefreshing(true)
       const params = new URLSearchParams()
       if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter)
@@ -126,14 +152,18 @@ export function CreditManagement() {
       const res = await authFetch(`/api/credits?${params}`)
       if (res.ok) {
         const data = await res.json()
-        setCreditOrders(data.creditOrders)
-        setSummary(data.summary)
+        setCreditOrders(data.creditOrders || [])
+        setSummary(data.summary || defaultSummary)
+      } else {
+        setError('Failed to fetch credit orders')
       }
     } catch (error) {
       console.error('Fetch credit orders error:', error)
+      setError('Network error — please check your connection')
     } finally {
       setLoading(false)
       setRefreshing(false)
+      fetchingRef.current = false
     }
   }, [authFetch, statusFilter, searchTerm])
 
@@ -275,7 +305,7 @@ export function CreditManagement() {
         return
       }
       if (amount > selectedOrder.remainingBalance) {
-        toast.error(`Payment exceeds remaining balance of KES ${selectedOrder.remainingBalance.toLocaleString()}`)
+        toast.error(`Payment exceeds remaining balance of KES ${safeLocaleString(selectedOrder.remainingBalance)}`)
         return
       }
 
@@ -388,7 +418,7 @@ export function CreditManagement() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Outstanding Balance</p>
-                <p className="text-2xl font-bold text-red-600">KES {summary.totalOutstanding.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-red-600">KES {safeLocaleString(summary.totalOutstanding)}</p>
                 <p className="text-xs text-muted-foreground">{summary.totalOrders - summary.fullyPaidCount} pending orders</p>
               </div>
               <CreditCard className="h-8 w-8 text-red-500 opacity-80" />
@@ -400,7 +430,7 @@ export function CreditManagement() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Credit Sales</p>
-                <p className="text-2xl font-bold">KES {summary.totalCreditAmount.toLocaleString()}</p>
+                <p className="text-2xl font-bold">KES {safeLocaleString(summary.totalCreditAmount)}</p>
                 <p className="text-xs text-muted-foreground">{summary.totalOrders} total orders</p>
               </div>
               <DollarSign className="h-8 w-8 text-amber-700 opacity-80" />
@@ -412,7 +442,7 @@ export function CreditManagement() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Paid</p>
-                <p className="text-2xl font-bold text-green-600">KES {summary.totalPayments.toLocaleString()}</p>
+                <p className="text-2xl font-bold text-green-600">KES {safeLocaleString(summary.totalPayments)}</p>
                 <p className="text-xs text-muted-foreground">{summary.fullyPaidCount} fully paid</p>
               </div>
               <CheckCircle2 className="h-8 w-8 text-green-500 opacity-80" />
@@ -470,6 +500,19 @@ export function CreditManagement() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading...</div>
+          ) : error && creditOrders.length === 0 ? (
+            <div className="p-8 text-center">
+              <div className="max-w-md mx-auto space-y-4">
+                <div className="p-4 bg-red-50 dark:bg-red-950/30 rounded-full w-fit mx-auto">
+                  <AlertTriangle className="h-10 w-10 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold">Failed to Load Credit Orders</h3>
+                <p className="text-sm text-muted-foreground">{error}</p>
+                <Button variant="outline" onClick={() => fetchCreditOrders(true)}>
+                  <RefreshCw className="h-4 w-4 mr-2" /> Retry
+                </Button>
+              </div>
+            </div>
           ) : creditOrders.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <CreditCard className="h-12 w-12 mx-auto mb-2 opacity-50" />
@@ -508,9 +551,9 @@ export function CreditManagement() {
                       <TableRow key={order.id}>
                         <TableCell className="font-medium">{order.customerName}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{order.customerPhone || '-'}</TableCell>
-                        <TableCell className="text-right">KES {order.totalAmount.toLocaleString()}</TableCell>
-                        <TableCell className="text-right text-green-600">KES {order.depositAmount.toLocaleString()}</TableCell>
-                        <TableCell className="text-right font-semibold text-red-600">KES {order.remainingBalance.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">KES {safeLocaleString(order.totalAmount)}</TableCell>
+                        <TableCell className="text-right text-green-600">KES {safeLocaleString(order.depositAmount)}</TableCell>
+                        <TableCell className="text-right font-semibold text-red-600">KES {safeLocaleString(order.remainingBalance)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={`text-xs ${status.color}`}>
                             {status.label}
@@ -620,7 +663,7 @@ export function CreditManagement() {
                     >
                       <span className="font-medium truncate w-full">{product.name}</span>
                       <span className="text-xs text-muted-foreground">
-                        KES {product.sellingPrice.toLocaleString()} · {product.quantity} left
+                        KES {safeLocaleString(product.sellingPrice)} · {product.quantity} left
                       </span>
                     </button>
                   ))}
@@ -651,7 +694,7 @@ export function CreditManagement() {
                       {cartItems.map((item) => (
                         <TableRow key={item.productId}>
                           <TableCell className="font-medium text-sm">{item.productName}</TableCell>
-                          <TableCell className="text-right text-sm">KES {item.price.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-sm">KES {safeLocaleString(item.price)}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
                               <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => updateCartItem(item.productId, item.quantity - 1)}>-</Button>
@@ -659,7 +702,7 @@ export function CreditManagement() {
                               <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => updateCartItem(item.productId, item.quantity + 1)}>+</Button>
                             </div>
                           </TableCell>
-                          <TableCell className="text-right text-sm font-medium">KES {(item.price * item.quantity).toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-sm font-medium">KES {safeLocaleString(item.price * item.quantity)}</TableCell>
                           <TableCell>
                             <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => removeCartItem(item.productId)}>
                               <Trash2 className="h-3 w-3" />
@@ -671,7 +714,7 @@ export function CreditManagement() {
                   </Table>
                   <div className="p-3 border-t flex justify-between items-center font-medium">
                     <span>Total Amount</span>
-                    <span>KES {cartTotal.toLocaleString()}</span>
+                    <span>KES {safeLocaleString(cartTotal)}</span>
                   </div>
                 </div>
               </div>
@@ -691,7 +734,7 @@ export function CreditManagement() {
                 />
                 {cartTotal > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    Balance: KES {(cartTotal - depositAmount).toLocaleString()}
+                    Balance: KES {safeLocaleString(cartTotal - depositAmount)}
                   </p>
                 )}
               </div>
@@ -745,9 +788,9 @@ export function CreditManagement() {
             <div className="space-y-4">
               <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
                 <p><strong>Customer:</strong> {selectedOrder.customerName}</p>
-                <p><strong>Total:</strong> KES {selectedOrder.totalAmount.toLocaleString()}</p>
-                <p><strong>Paid So Far:</strong> KES {selectedOrder.depositAmount.toLocaleString()}</p>
-                <p><strong>Remaining:</strong> <span className="text-red-600 font-semibold">KES {selectedOrder.remainingBalance.toLocaleString()}</span></p>
+                <p><strong>Total:</strong> KES {safeLocaleString(selectedOrder.totalAmount)}</p>
+                <p><strong>Paid So Far:</strong> KES {safeLocaleString(selectedOrder.depositAmount)}</p>
+                <p><strong>Remaining:</strong> <span className="text-red-600 font-semibold">KES {safeLocaleString(selectedOrder.remainingBalance)}</span></p>
               </div>
               <div className="space-y-2">
                 <Label>Payment Amount (KES) *</Label>
@@ -801,15 +844,15 @@ export function CreditManagement() {
             <div className="space-y-4">
               <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
                 <p><strong>Customer:</strong> {selectedOrder.customerName}</p>
-                <p><strong>Total:</strong> KES {selectedOrder.totalAmount.toLocaleString()}</p>
-                <p><strong>Remaining:</strong> KES {selectedOrder.remainingBalance.toLocaleString()}</p>
+                <p><strong>Total:</strong> KES {safeLocaleString(selectedOrder.totalAmount)}</p>
+                <p><strong>Remaining:</strong> KES {safeLocaleString(selectedOrder.remainingBalance)}</p>
               </div>
               {selectedOrder.payments && selectedOrder.payments.length > 0 ? (
                 <div className="space-y-2">
                   {selectedOrder.payments.map((payment: any) => (
                     <div key={payment.id} className="flex items-center justify-between p-3 border rounded-lg">
                       <div>
-                        <p className="text-sm font-medium">KES {payment.amount.toLocaleString()}</p>
+                        <p className="text-sm font-medium">KES {safeLocaleString(payment.amount)}</p>
                         <p className="text-xs text-muted-foreground">
                           {payment.paymentMethod} · by {payment.user?.name || '-'}
                         </p>
@@ -854,9 +897,9 @@ export function CreditManagement() {
                 </div>
                 <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
                   <p className="font-semibold mb-2">Payment Info</p>
-                  <p><strong>Total:</strong> KES {selectedOrder.totalAmount.toLocaleString()}</p>
-                  <p><strong>Paid:</strong> <span className="text-green-600">KES {selectedOrder.depositAmount.toLocaleString()}</span></p>
-                  <p><strong>Balance:</strong> <span className="text-red-600 font-semibold">KES {selectedOrder.remainingBalance.toLocaleString()}</span></p>
+                  <p><strong>Total:</strong> KES {safeLocaleString(selectedOrder.totalAmount)}</p>
+                  <p><strong>Paid:</strong> <span className="text-green-600">KES {safeLocaleString(selectedOrder.depositAmount)}</span></p>
+                  <p><strong>Balance:</strong> <span className="text-red-600 font-semibold">KES {safeLocaleString(selectedOrder.remainingBalance)}</span></p>
                   <p>
                     <strong>Status:</strong>{' '}
                     <Badge variant="outline" className={`text-xs ${(STATUS_CONFIG[selectedOrder.paymentStatus] || STATUS_CONFIG.deposit_paid).color}`}>
@@ -884,9 +927,9 @@ export function CreditManagement() {
                         {selectedOrder.items.map((item: any) => (
                           <TableRow key={item.id}>
                             <TableCell className="font-medium text-sm">{item.product?.name || 'Unknown'}</TableCell>
-                            <TableCell className="text-right text-sm">KES {item.price.toLocaleString()}</TableCell>
+                            <TableCell className="text-right text-sm">KES {safeLocaleString(item.price)}</TableCell>
                             <TableCell className="text-right text-sm">{item.quantity}</TableCell>
-                            <TableCell className="text-right text-sm font-medium">KES {item.total.toLocaleString()}</TableCell>
+                            <TableCell className="text-right text-sm font-medium">KES {safeLocaleString(item.total)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -903,7 +946,7 @@ export function CreditManagement() {
                     {selectedOrder.payments.map((payment: any) => (
                       <div key={payment.id} className="flex items-center justify-between p-2 border rounded text-sm">
                         <div>
-                          <span className="font-medium">KES {payment.amount.toLocaleString()}</span>
+                          <span className="font-medium">KES {safeLocaleString(payment.amount)}</span>
                           <span className="text-muted-foreground ml-2">via {payment.paymentMethod}</span>
                           {payment.notes && <span className="text-muted-foreground ml-2">· {payment.notes}</span>}
                         </div>
@@ -999,9 +1042,9 @@ export function CreditManagement() {
                 <strong>restore all product stock</strong> that was deducted. This action cannot be undone.
               </p>
               <div className="p-3 bg-muted rounded-lg text-sm">
-                <p><strong>Total:</strong> KES {selectedOrder.totalAmount.toLocaleString()}</p>
-                <p><strong>Paid:</strong> KES {selectedOrder.depositAmount.toLocaleString()}</p>
-                <p><strong>Remaining:</strong> KES {selectedOrder.remainingBalance.toLocaleString()}</p>
+                <p><strong>Total:</strong> KES {safeLocaleString(selectedOrder.totalAmount)}</p>
+                <p><strong>Paid:</strong> KES {safeLocaleString(selectedOrder.depositAmount)}</p>
+                <p><strong>Remaining:</strong> KES {safeLocaleString(selectedOrder.remainingBalance)}</p>
                 <p><strong>Items:</strong> {selectedOrder.items?.length || 0} products</p>
               </div>
             </div>

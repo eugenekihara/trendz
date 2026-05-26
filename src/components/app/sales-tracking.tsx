@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore, DataChangeEvent } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,8 +9,19 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { TrendingUp, Plus, Calendar, ShoppingCart, ArrowRight, RefreshCw, Trash2 } from 'lucide-react'
+import { TrendingUp, Plus, Calendar, ShoppingCart, ArrowRight, RefreshCw, Trash2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+
+function safeNum(val: any, fallback = 0): number {
+  if (val === null || val === undefined) return fallback
+  const n = Number(val)
+  return isNaN(n) ? fallback : n
+}
+
+function safeLocaleString(val: any, fallback = '0'): string {
+  const n = safeNum(val, -1)
+  return n === -1 ? fallback : n.toLocaleString()
+}
 
 // All events that should trigger a Sales Tracking refresh
 const SALES_TRACKING_EVENTS: DataChangeEvent[] = [
@@ -24,6 +35,18 @@ const SALES_TRACKING_EVENTS: DataChangeEvent[] = [
   'credit-changed',      // credit order changes
 ]
 
+const defaultSummary = {
+  totalAmount: 0,
+  totalQuantity: 0,
+  totalEntries: 0,
+  posAmount: 0,
+  posCount: 0,
+  manualAmount: 0,
+  manualCount: 0,
+  creditAmount: 0,
+  creditCount: 0,
+}
+
 export function SalesTracking() {
   const user = useAppStore((s) => s.user)
   const authFetch = useAppStore((s) => s.authFetch)
@@ -31,9 +54,10 @@ export function SalesTracking() {
   const notifyDataChange = useAppStore((s) => s.notifyDataChange)
   const onDataChange = useAppStore((s) => s.onDataChange)
   const [entries, setEntries] = useState<any[]>([])
-  const [summary, setSummary] = useState({ totalAmount: 0, totalQuantity: 0, totalEntries: 0, posAmount: 0, posCount: 0, manualAmount: 0, manualCount: 0, creditAmount: 0, creditCount: 0 })
+  const [summary, setSummary] = useState(defaultSummary)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [addDialog, setAddDialog] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<any>(null)
@@ -41,8 +65,19 @@ export function SalesTracking() {
   const [endDate, setEndDate] = useState('')
   const [form, setForm] = useState({ productName: '', quantity: '', amount: '', date: '' })
 
+  const fetchingRef = useRef(false)
+  const lastFetchRef = useRef(0)
+  const MIN_FETCH_INTERVAL = 2000
+
   const fetchEntries = useCallback(async (showRefresh = false) => {
+    if (fetchingRef.current) return
+    const now = Date.now()
+    if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+    fetchingRef.current = true
+    lastFetchRef.current = now
+
     try {
+      setError(null)
       if (showRefresh) setRefreshing(true)
       const params = new URLSearchParams()
       if (startDate) params.set('startDate', startDate)
@@ -54,14 +89,18 @@ export function SalesTracking() {
         setEntries(data.entries)
         // Use server-computed summary (not affected by pagination)
         if (data.summary) {
-          setSummary(data.summary)
+          setSummary({ ...defaultSummary, ...data.summary })
         }
+      } else {
+        setError('Failed to fetch sales entries')
       }
     } catch (error) {
       console.error('Fetch entries error:', error)
+      setError('Network error — please check your connection')
     } finally {
       setLoading(false)
       setRefreshing(false)
+      fetchingRef.current = false
     }
   }, [authFetch, startDate, endDate])
 
@@ -165,7 +204,7 @@ export function SalesTracking() {
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Amount</p>
-            <p className="text-2xl font-bold">KES {summary.totalAmount.toLocaleString()}</p>
+            <p className="text-2xl font-bold">KES {safeLocaleString(summary.totalAmount)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -183,21 +222,21 @@ export function SalesTracking() {
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground text-amber-700">POS Sales</p>
-            <p className="text-xl font-bold">KES {summary.posAmount.toLocaleString()}</p>
+            <p className="text-xl font-bold">KES {safeLocaleString(summary.posAmount)}</p>
             <p className="text-xs text-muted-foreground">{summary.posCount} entries</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground text-purple-700">Credit Sales</p>
-            <p className="text-xl font-bold">KES {summary.creditAmount.toLocaleString()}</p>
+            <p className="text-xl font-bold">KES {safeLocaleString(summary.creditAmount)}</p>
             <p className="text-xs text-muted-foreground">{summary.creditCount} entries</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground text-orange-600">Manual Entries</p>
-            <p className="text-xl font-bold">KES {summary.manualAmount.toLocaleString()}</p>
+            <p className="text-xl font-bold">KES {safeLocaleString(summary.manualAmount)}</p>
             <p className="text-xs text-muted-foreground">{summary.manualCount} entries</p>
           </CardContent>
         </Card>
@@ -228,6 +267,21 @@ export function SalesTracking() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading...</div>
+          ) : error && !loading && entries.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <div className="max-w-md mx-auto space-y-4">
+                  <div className="p-4 bg-red-50 dark:bg-red-950/30 rounded-full w-fit mx-auto">
+                    <AlertTriangle className="h-10 w-10 text-red-600" />
+                  </div>
+                  <h3 className="text-lg font-semibold">Failed to Load Sales Data</h3>
+                  <p className="text-sm text-muted-foreground">{error}</p>
+                  <Button variant="outline" onClick={() => fetchEntries(true)}>
+                    <RefreshCw className="h-4 w-4 mr-2" /> Retry
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ) : entries.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <ShoppingCart className="h-12 w-12 mx-auto mb-2 opacity-50" />
@@ -261,7 +315,7 @@ export function SalesTracking() {
                     <TableRow key={entry.id}>
                       <TableCell className="font-medium">{entry.productName}</TableCell>
                       <TableCell className="text-right">{entry.quantity}</TableCell>
-                      <TableCell className="text-right">KES {entry.amount.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">KES {safeLocaleString(entry.amount)}</TableCell>
                       <TableCell>
                         <Badge
                           variant="outline"
@@ -353,7 +407,7 @@ export function SalesTracking() {
               <div className="p-3 bg-muted rounded-lg text-sm">
                 <p><strong>Product:</strong> {deleteTarget.productName}</p>
                 <p><strong>Quantity:</strong> {deleteTarget.quantity}</p>
-                <p><strong>Amount:</strong> KES {deleteTarget.amount?.toLocaleString()}</p>
+                <p><strong>Amount:</strong> KES {safeLocaleString(deleteTarget.amount)}</p>
                 <p><strong>Source:</strong> <span className="capitalize">{deleteTarget.source}</span></p>
               </div>
             </div>

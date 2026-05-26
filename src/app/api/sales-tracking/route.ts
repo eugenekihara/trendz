@@ -5,6 +5,16 @@ import { verifyAuth } from '@/lib/auth'
 // Force dynamic rendering — never cache this route
 export const dynamic = 'force-dynamic'
 
+// Helper: safely execute a DB query, returning fallback on failure
+async function safeQuery<T>(label: string, query: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await query()
+  } catch (err) {
+    console.error(`Sales tracking query failed [${label}]:`, err)
+    return fallback
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await verifyAuth()
@@ -32,7 +42,7 @@ export async function GET(request: Request) {
 
     // Fetch paginated entries AND aggregate summary in parallel
     // Summary is computed over ALL matching entries, not just the current page
-    const [entries, total, summary, posSummary, creditSummary] = await Promise.all([
+    const [entries, total, summary, posSummary, creditSummary] = await safeQuery('main-query', () => Promise.all([
       db.salesEntry.findMany({
         where,
         include: { user: { select: { id: true, name: true } } },
@@ -58,36 +68,53 @@ export async function GET(request: Request) {
         _sum: { amount: true },
         _count: true,
       }),
+    ]), [
+      [], 0,
+      { _sum: { amount: 0, quantity: 0 }, _count: 0 },
+      { _sum: { amount: 0 }, _count: 0 },
+      { _sum: { amount: 0 }, _count: 0 },
     ])
 
     // Compute manual entry totals by subtraction (avoids extra queries)
-    const creditAmount = creditSummary._sum.amount || 0
-    const creditCount = creditSummary._count
-    const manualAmount = (summary._sum.amount || 0) - (posSummary._sum.amount || 0) - creditAmount
-    const manualCount = summary._count - posSummary._count - creditCount
+    const creditAmount = creditSummary._sum?.amount || 0
+    const creditCount = creditSummary._count || 0
+    const manualAmount = Math.max(0, (summary._sum?.amount || 0) - (posSummary._sum?.amount || 0) - creditAmount)
+    const manualCount = Math.max(0, (summary._count || 0) - (posSummary._count || 0) - creditCount)
 
     return NextResponse.json({
-      entries,
-      total,
+      entries: Array.isArray(entries) ? entries : [],
+      total: total || 0,
       page,
       limit,
       // Summary totals across ALL entries (not just current page)
-      // Includes source breakdown for alignment with Dashboard and Reports
       summary: {
-        totalAmount: summary._sum.amount || 0,
-        totalQuantity: summary._sum.quantity || 0,
-        totalEntries: summary._count,
-        posAmount: posSummary._sum.amount || 0,
-        posCount: posSummary._count,
+        totalAmount: summary._sum?.amount || 0,
+        totalQuantity: summary._sum?.quantity || 0,
+        totalEntries: summary._count || 0,
+        posAmount: posSummary._sum?.amount || 0,
+        posCount: posSummary._count || 0,
         creditAmount,
         creditCount,
-        manualAmount: Math.max(0, manualAmount),
-        manualCount: Math.max(0, manualCount),
+        manualAmount,
+        manualCount,
       },
     }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
-    console.error('Sales tracking GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch sales entries' }, { status: 500 })
+    console.error('Sales tracking GET fatal error:', error)
+    // Return structured empty data so frontend doesn't crash
+    return NextResponse.json({
+      entries: [],
+      total: 0,
+      page: 1,
+      limit: 20,
+      summary: {
+        totalAmount: 0, totalQuantity: 0, totalEntries: 0,
+        posAmount: 0, posCount: 0,
+        creditAmount: 0, creditCount: 0,
+        manualAmount: 0, manualCount: 0,
+      },
+      _error: 'Failed to fetch sales tracking data',
+    }, { status: 200 })
   }
 }
 

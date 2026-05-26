@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
-import { Search, Plus, Edit2, Trash2, AlertTriangle, Package, Tags, X } from 'lucide-react'
+import { Search, Plus, Edit2, Trash2, AlertTriangle, Package, Tags, X, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface Category {
@@ -59,6 +59,17 @@ const INVENTORY_REFRESH_EVENTS: DataChangeEvent[] = [
   'credit-changed',     // credit orders affect stock
 ]
 
+function safeNum(val: any, fallback = 0): number {
+  if (val === null || val === undefined) return fallback
+  const n = Number(val)
+  return isNaN(n) ? fallback : n
+}
+
+function safeLocaleString(val: any, fallback = '0'): string {
+  const n = safeNum(val, -1)
+  return n === -1 ? fallback : n.toLocaleString()
+}
+
 export function Inventory() {
   const user = useAppStore((s) => s.user)
   const authFetch = useAppStore((s) => s.authFetch)
@@ -68,6 +79,7 @@ export function Inventory() {
   const [categories, setCategories] = useState<Category[]>([])
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState('all')
   const [filterStock, setFilterStock] = useState('all')
@@ -93,10 +105,11 @@ export function Inventory() {
   const lastFetchRef = useRef(0)
 
   const fetchProducts = useCallback(async () => {
-    // Debounce: don't re-fetch if we just fetched within the last 500ms
+    // Debounce: don't re-fetch if we just fetched within the last 2000ms
     const now = Date.now()
-    if (now - lastFetchRef.current < 500) return
+    if (now - lastFetchRef.current < 2000) return
     lastFetchRef.current = now
+    setError(null)
     try {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
@@ -106,9 +119,12 @@ export function Inventory() {
       if (res.ok) {
         const data = await res.json()
         setProducts(data.products)
+      } else {
+        setError('Failed to fetch products')
       }
     } catch (error) {
       console.error('Fetch products error:', error)
+      setError('Network error — please check your connection')
     } finally {
       setLoading(false)
     }
@@ -342,6 +358,19 @@ export function Inventory() {
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading products...</div>
+          ) : error && products.length === 0 ? (
+            <div className="p-8 text-center">
+              <div className="max-w-md mx-auto space-y-4">
+                <div className="p-4 bg-red-50 dark:bg-red-950/30 rounded-full w-fit mx-auto">
+                  <AlertTriangle className="h-10 w-10 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold">Failed to Load Inventory</h3>
+                <p className="text-sm text-muted-foreground">{error}</p>
+                <Button variant="outline" onClick={() => { setError(null); fetchProducts(); }}>
+                  <RefreshCw className="h-4 w-4 mr-2" /> Retry
+                </Button>
+              </div>
+            </div>
           ) : products.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
               <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
@@ -373,8 +402,8 @@ export function Inventory() {
                       </TableCell>
                       <TableCell className="font-mono text-sm">{product.sku}</TableCell>
                       <TableCell><Badge variant="outline">{product.category?.name}</Badge></TableCell>
-                      <TableCell className="text-right">KES {product.buyingPrice.toLocaleString()}</TableCell>
-                      <TableCell className="text-right">KES {product.sellingPrice.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">KES {safeLocaleString(product.buyingPrice)}</TableCell>
+                      <TableCell className="text-right">KES {safeLocaleString(product.sellingPrice)}</TableCell>
                       <TableCell className="text-right font-medium">{product.quantity}</TableCell>
                       <TableCell>{stockStatus(product)}</TableCell>
                       {user?.role === 'admin' && (
