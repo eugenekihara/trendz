@@ -33,7 +33,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, adminOnly: true },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'sales-pos', label: 'Sales POS', icon: ShoppingCart },
   { id: 'sales-tracking', label: 'Sales Tracking', icon: TrendingUp },

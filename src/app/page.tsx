@@ -46,7 +46,7 @@ export default function Home() {
     const renderPage = () => {
       switch (currentPage) {
         case 'dashboard':
-          return user.role === 'admin' ? <Dashboard /> : <Inventory />
+          return <Dashboard />
         case 'inventory':
           return <Inventory />
         case 'sales-pos':
@@ -54,11 +54,11 @@ export default function Home() {
         case 'sales-tracking':
           return <SalesTracking />
         case 'suppliers':
-          return user.role === 'admin' ? <Suppliers /> : <Inventory />
+          return user.role === 'admin' ? <Suppliers /> : <Dashboard />
         case 'credits':
           return <CreditManagement />
         case 'reports':
-          return user.role === 'admin' ? <Reports /> : <Inventory />
+          return user.role === 'admin' ? <Reports /> : <Dashboard />
         case 'settings':
           return user.role === 'admin' ? <Settings /> : <StaffSettings />
         case 'staff-settings':
@@ -66,7 +66,7 @@ export default function Home() {
         case 'notifications':
           return <Notifications />
         default:
-          return user.role === 'admin' ? <Dashboard /> : <Inventory />
+          return <Dashboard />
       }
     }
 

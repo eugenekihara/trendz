@@ -16,10 +16,12 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(request: Request) {
   try {
-    const auth = await verifyAuth('admin')
-    if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const auth = await verifyAuth(['admin', 'staff'])
+    if (!auth.authenticated) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const isAdmin = auth.user?.role === 'admin'
+    const userId = auth.user!.id
 
     const { searchParams } = new URL(request.url)
     const period = searchParams.get('period') || 'month'
@@ -55,8 +57,14 @@ export async function GET(request: Request) {
       }
     }
 
-    const saleDateFilter = { createdAt: { gte: startDate, lte: endDate } }
-    const entryDateFilter = { date: { gte: startDate, lte: endDate } }
+    const saleDateFilter: any = { createdAt: { gte: startDate, lte: endDate } }
+    const entryDateFilter: any = { date: { gte: startDate, lte: endDate } }
+    const creditDateFilter: any = { createdAt: { gte: startDate, lte: endDate } }
+
+    // Staff-scoped where clauses: staff only see their own data
+    const saleWhere = isAdmin ? saleDateFilter : { ...saleDateFilter, userId }
+    const entryWhere = isAdmin ? entryDateFilter : { ...entryDateFilter, userId }
+    const creditWhere = isAdmin ? creditDateFilter : { ...creditDateFilter, userId }
 
     // ─── POS sales data from Sale table ───
     const [
@@ -67,18 +75,18 @@ export async function GET(request: Request) {
       salesByPaymentMethod,
       posTopProducts,
     ] = await Promise.all([
-      db.sale.count({ where: saleDateFilter }),
+      db.sale.count({ where: saleWhere }),
       db.sale.aggregate({
         _sum: { total: true, discount: true },
         _count: true,
-        where: saleDateFilter,
+        where: saleWhere,
       }),
       db.saleItem.aggregate({
         _sum: { quantity: true },
-        where: { sale: saleDateFilter },
+        where: { sale: saleWhere },
       }),
       db.sale.findMany({
-        where: saleDateFilter,
+        where: saleWhere,
         select: { createdAt: true, total: true },
         orderBy: { createdAt: 'asc' },
       }),
@@ -86,13 +94,13 @@ export async function GET(request: Request) {
         by: ['paymentMethod'],
         _sum: { total: true },
         _count: true,
-        where: saleDateFilter,
+        where: saleWhere,
       }),
       db.saleItem.groupBy({
         by: ['productId'],
         _sum: { quantity: true, total: true },
         _count: true,
-        where: { sale: saleDateFilter },
+        where: { sale: saleWhere },
         orderBy: { _sum: { total: 'desc' } },
         take: 10,
       }),
@@ -100,35 +108,35 @@ export async function GET(request: Request) {
 
     // ─── Manual sales entries in the same period ───
     const [manualTotal, manualRevenue, manualSalesByDay, manualItemsSold] = await Promise.all([
-      db.salesEntry.count({ where: { source: 'manual', ...entryDateFilter } }),
+      db.salesEntry.count({ where: { source: 'manual', ...entryWhere } }),
       db.salesEntry.aggregate({
         _sum: { amount: true },
-        where: { source: 'manual', ...entryDateFilter },
+        where: { source: 'manual', ...entryWhere },
       }),
       db.salesEntry.findMany({
-        where: { source: 'manual', ...entryDateFilter },
+        where: { source: 'manual', ...entryWhere },
         select: { date: true, amount: true },
       }),
       db.salesEntry.aggregate({
         _sum: { quantity: true },
-        where: { source: 'manual', ...entryDateFilter },
+        where: { source: 'manual', ...entryWhere },
       }),
     ])
 
     // ─── Credit sales entries in the same period ───
     const [creditTotal, creditRevenue, creditSalesByDay, creditItemsSold] = await Promise.all([
-      db.salesEntry.count({ where: { source: 'credit', ...entryDateFilter } }),
+      db.salesEntry.count({ where: { source: 'credit', ...entryWhere } }),
       db.salesEntry.aggregate({
         _sum: { amount: true },
-        where: { source: 'credit', ...entryDateFilter },
+        where: { source: 'credit', ...entryWhere },
       }),
       db.salesEntry.findMany({
-        where: { source: 'credit', ...entryDateFilter },
+        where: { source: 'credit', ...entryWhere },
         select: { date: true, amount: true },
       }),
       db.salesEntry.aggregate({
         _sum: { quantity: true },
-        where: { source: 'credit', ...entryDateFilter },
+        where: { source: 'credit', ...entryWhere },
       }),
     ])
 
@@ -140,18 +148,18 @@ export async function GET(request: Request) {
       creditOrderPaidCount,
       creditOrderOverdueCount,
     ] = await Promise.all([
-      db.creditOrder.count({ where: saleDateFilter }),
+      db.creditOrder.count({ where: creditWhere }),
       db.creditOrder.aggregate({
         _sum: { totalAmount: true, remainingBalance: true, depositAmount: true },
-        where: saleDateFilter,
+        where: creditWhere,
       }),
       db.creditOrder.aggregate({
         _sum: { remainingBalance: true },
         _count: true,
-        where: { paymentStatus: { not: 'fully_paid' } },
+        where: { ...creditWhere, paymentStatus: { not: 'fully_paid' } },
       }),
-      db.creditOrder.count({ where: { paymentStatus: 'fully_paid', ...saleDateFilter } }),
-      db.creditOrder.count({ where: { paymentStatus: 'overdue', ...saleDateFilter } }),
+      db.creditOrder.count({ where: { paymentStatus: 'fully_paid', ...creditWhere } }),
+      db.creditOrder.count({ where: { paymentStatus: 'overdue', ...creditWhere } }),
     ])
 
     // ─── Combined totals (POS + Manual + Credit) ───
@@ -198,7 +206,7 @@ export async function GET(request: Request) {
 
     // ─── Category breakdown ───
     const categorySalesData = await db.saleItem.findMany({
-      where: { sale: saleDateFilter },
+      where: { sale: saleWhere },
       include: {
         product: {
           select: {

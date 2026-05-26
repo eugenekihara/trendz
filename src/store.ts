@@ -60,7 +60,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarOpen: false,
   dataVersion: 0,
 
-  login: (user) => set({ user, currentPage: user.role === 'admin' ? 'dashboard' : 'inventory' }),
+  login: (user) => set({ user, currentPage: 'dashboard' }),
   logout: () => set({ user: null, currentPage: 'dashboard' }),
   setCurrentPage: (page) => set({ currentPage: page }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),

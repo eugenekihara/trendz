@@ -7,9 +7,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const auth = await verifyAuth('admin')
-    if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const auth = await verifyAuth(['admin', 'staff'])
+    if (!auth.authenticated) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const suppliers = await db.supplier.findMany({
