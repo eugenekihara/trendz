@@ -7,13 +7,20 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const auth = await verifyAuth('admin')
-    if (!auth.authenticated || auth.error) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    const auth = await verifyAuth(['admin', 'staff'])
+    if (!auth.authenticated) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const isAdmin = auth.user?.role === 'admin'
+    const userId = auth.user!.id
 
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    // Staff-scoped where clause: staff only see their own sales, admin sees all
+    const saleWhere = isAdmin ? {} : { userId }
+    const entryWhere = isAdmin ? {} : { userId }
+    const creditWhere = isAdmin ? {} : { userId }
 
     // ─── Core counts & aggregates from Sale table (POS sales) ───
     const [
@@ -29,10 +36,10 @@ export async function GET() {
     ] = await Promise.all([
       db.product.count({ where: { active: true } }),
       db.product.findMany({ where: { active: true }, select: { quantity: true, minStock: true } }),
-      db.sale.count(),
-      db.sale.count({ where: { createdAt: { gte: startOfMonth } } }),
-      db.sale.aggregate({ _sum: { total: true } }),
-      db.sale.aggregate({ _sum: { total: true }, where: { createdAt: { gte: startOfMonth } } }),
+      db.sale.count({ where: saleWhere }),
+      db.sale.count({ where: { ...saleWhere, createdAt: { gte: startOfMonth } } }),
+      db.sale.aggregate({ _sum: { total: true }, where: saleWhere }),
+      db.sale.aggregate({ _sum: { total: true }, where: { ...saleWhere, createdAt: { gte: startOfMonth } } }),
       db.category.count(),
       db.supplier.count({ where: { active: true } }),
       db.user.count({ where: { active: true } }),
@@ -43,12 +50,12 @@ export async function GET() {
       db.salesEntry.aggregate({
         _sum: { amount: true },
         _count: true,
-        where: { source: 'manual' },
+        where: { source: 'manual', ...entryWhere },
       }),
       db.salesEntry.aggregate({
         _sum: { amount: true },
         _count: true,
-        where: { source: 'manual', date: { gte: startOfMonth } },
+        where: { source: 'manual', ...entryWhere, date: { gte: startOfMonth } },
       }),
     ])
 
@@ -57,12 +64,12 @@ export async function GET() {
       db.salesEntry.aggregate({
         _sum: { amount: true },
         _count: true,
-        where: { source: 'credit' },
+        where: { source: 'credit', ...entryWhere },
       }),
       db.salesEntry.aggregate({
         _sum: { amount: true },
         _count: true,
-        where: { source: 'credit', date: { gte: startOfMonth } },
+        where: { source: 'credit', ...entryWhere, date: { gte: startOfMonth } },
       }),
     ])
 
@@ -71,11 +78,12 @@ export async function GET() {
       db.creditOrder.aggregate({
         _sum: { totalAmount: true, remainingBalance: true, depositAmount: true },
         _count: true,
+        where: creditWhere,
       }),
-      db.creditOrder.count({ where: { paymentStatus: { not: 'fully_paid' } } }),
-      db.creditOrder.count({ where: { paymentStatus: 'fully_paid' } }),
-      db.creditOrder.count({ where: { paymentStatus: 'overdue' } }),
-      db.creditOrder.count({ where: { createdAt: { gte: startOfMonth } } }),
+      db.creditOrder.count({ where: { ...creditWhere, paymentStatus: { not: 'fully_paid' } } }),
+      db.creditOrder.count({ where: { ...creditWhere, paymentStatus: 'fully_paid' } }),
+      db.creditOrder.count({ where: { ...creditWhere, paymentStatus: 'overdue' } }),
+      db.creditOrder.count({ where: { ...creditWhere, createdAt: { gte: startOfMonth } } }),
     ])
 
     // ─── Combined totals (POS + Manual + Credit) ───
@@ -86,6 +94,7 @@ export async function GET() {
 
     // ─── Recent activity (POS sales + manual entries + credit entries combined) ───
     const recentPosSales = await db.sale.findMany({
+      where: saleWhere,
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -95,14 +104,14 @@ export async function GET() {
     })
 
     const recentManualEntries = await db.salesEntry.findMany({
-      where: { source: 'manual' },
+      where: { source: 'manual', ...entryWhere },
       take: 5,
       orderBy: { date: 'desc' },
       include: { user: { select: { name: true } } },
     })
 
     const recentCreditEntries = await db.salesEntry.findMany({
-      where: { source: 'credit' },
+      where: { source: 'credit', ...entryWhere },
       take: 5,
       orderBy: { date: 'desc' },
       include: { user: { select: { name: true } } },
@@ -152,20 +161,30 @@ export async function GET() {
     const lowStockProducts = (lowStockProductsRaw as Array<{ quantity: number; minStock: number }>).filter(p => p.quantity > 0 && p.quantity <= p.minStock).length
     const outOfStockProducts = (lowStockProductsRaw as Array<{ quantity: number; minStock: number }>).filter(p => p.quantity === 0).length
 
-    // ─── Top products (from POS SaleItems only — manual/credit entries don't have product breakdown) ───
-    const topProducts = await db.saleItem.groupBy({
-      by: ['productId'],
-      _sum: { quantity: true, total: true },
-      orderBy: { _sum: { total: 'desc' } },
-      take: 5,
-    })
+    // ─── Top products (from POS SaleItems — scoped by user for staff) ───
+    const topProductSales = isAdmin
+      ? await db.saleItem.groupBy({
+          by: ['productId'],
+          _sum: { quantity: true, total: true },
+          orderBy: { _sum: { total: 'desc' } },
+          take: 5,
+        })
+      : await db.saleItem.groupBy({
+          by: ['productId'],
+          _sum: { quantity: true, total: true },
+          orderBy: { _sum: { total: 'desc' } },
+          take: 5,
+          where: { sale: { userId } },
+        })
 
-    const topProductIds = topProducts.map(item => item.productId)
-    const topProductsData = await db.product.findMany({
-      where: { id: { in: topProductIds } },
-      select: { id: true, name: true, category: { select: { name: true } } },
-    })
-    const topProductsWithName = topProducts.map(item => ({
+    const topProductIds = topProductSales.map(item => item.productId)
+    const topProductsData = topProductIds.length > 0
+      ? await db.product.findMany({
+          where: { id: { in: topProductIds } },
+          select: { id: true, name: true, category: { select: { name: true } } },
+        })
+      : []
+    const topProductsWithName = topProductSales.map(item => ({
       ...item,
       product: topProductsData.find(p => p.id === item.productId) || null,
     }))
@@ -176,17 +195,17 @@ export async function GET() {
     sevenDaysAgo.setHours(0, 0, 0, 0)
 
     const posRecentSalesData = await db.sale.findMany({
-      where: { createdAt: { gte: sevenDaysAgo } },
+      where: { ...saleWhere, createdAt: { gte: sevenDaysAgo } },
       select: { createdAt: true, total: true },
     })
 
     const manualRecentEntries = await db.salesEntry.findMany({
-      where: { source: 'manual', date: { gte: sevenDaysAgo } },
+      where: { source: 'manual', ...entryWhere, date: { gte: sevenDaysAgo } },
       select: { date: true, amount: true },
     })
 
     const creditRecentEntries = await db.salesEntry.findMany({
-      where: { source: 'credit', date: { gte: sevenDaysAgo } },
+      where: { source: 'credit', ...entryWhere, date: { gte: sevenDaysAgo } },
       select: { date: true, amount: true },
     })
 
