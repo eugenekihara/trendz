@@ -61,8 +61,9 @@ export async function GET() {
     const totalRevenue = (posTotalRevenue._sum.total || 0) + (manualTotal._sum.amount || 0)
     const monthRevenue = (posMonthRevenue._sum.total || 0) + (manualMonth._sum.amount || 0)
 
-    // ─── Recent sales (from Sale table only — POS sales with full item detail) ───
-    const recentSales = await db.sale.findMany({
+    // ─── Recent activity (POS sales + manual entries combined) ───
+    // Fetch POS sales (have full item detail)
+    const recentPosSales = await db.sale.findMany({
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -71,12 +72,47 @@ export async function GET() {
       },
     })
 
+    // Fetch recent manual entries (contribute to totals but were invisible before)
+    const recentManualEntries = await db.salesEntry.findMany({
+      where: { source: 'manual' },
+      take: 5,
+      orderBy: { date: 'desc' },
+      include: { user: { select: { name: true } } },
+    })
+
+    // Merge both into a unified recent sales list, sorted by date
+    const recentSales = [
+      ...recentPosSales.map(sale => ({
+        id: sale.id,
+        type: 'pos' as const,
+        label: sale.invoiceNumber,
+        total: sale.total,
+        paymentMethod: sale.paymentMethod,
+        user: sale.user,
+        date: sale.createdAt,
+        itemCount: sale.items.length,
+      })),
+      ...recentManualEntries.map(entry => ({
+        id: entry.id,
+        type: 'manual' as const,
+        label: entry.productName,
+        total: entry.amount,
+        paymentMethod: 'manual',
+        user: entry.user,
+        date: entry.date,
+        itemCount: 0,
+      })),
+    ]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 8)
+
     // Category breakdown
     const categoryBreakdown = await db.category.findMany({
       include: { _count: { select: { products: { where: { active: true } } } } },
     })
 
     const lowStockProducts = (lowStockProductsRaw as Array<{ quantity: number; minStock: number }>).filter(p => p.quantity > 0 && p.quantity <= p.minStock).length
+    const outOfStockProducts = (lowStockProductsRaw as Array<{ quantity: number; minStock: number }>).filter(p => p.quantity === 0).length
 
     // ─── Top products (from POS SaleItems only — manual entries don't have product breakdown) ───
     const topProducts = await db.saleItem.groupBy({
@@ -139,6 +175,7 @@ export async function GET() {
       stats: {
         totalProducts,
         lowStockProducts,
+        outOfStockProducts,
         totalSales,
         monthSales,
         totalRevenue,

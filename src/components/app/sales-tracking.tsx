@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { TrendingUp, Plus, Calendar, ShoppingCart, ArrowRight, RefreshCw } from 'lucide-react'
+import { TrendingUp, Plus, Calendar, ShoppingCart, ArrowRight, RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 // All events that should trigger a Sales Tracking refresh
@@ -34,6 +34,8 @@ export function SalesTracking() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [addDialog, setAddDialog] = useState(false)
+  const [deleteDialog, setDeleteDialog] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<any>(null)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [form, setForm] = useState({ productName: '', quantity: '', amount: '', date: '' })
@@ -106,6 +108,44 @@ export function SalesTracking() {
     } catch {
       toast.error('Failed to add entry')
     }
+  }
+
+  const deleteEntry = async () => {
+    if (!deleteTarget) return
+    try {
+      if (deleteTarget.source === 'manual') {
+        // Delete manual entry through sales-tracking API
+        const res = await authFetch(`/api/sales-tracking/${deleteTarget.id}`, { method: 'DELETE' })
+        if (!res.ok) {
+          const data = await res.json()
+          toast.error(data.error || 'Failed to delete entry')
+          return
+        }
+        toast.success('Entry deleted')
+      } else if (deleteTarget.source === 'pos' && deleteTarget.saleId) {
+        // Delete POS sale through sales API (restores inventory)
+        const res = await authFetch(`/api/sales/${deleteTarget.saleId}`, { method: 'DELETE' })
+        if (!res.ok) {
+          const data = await res.json()
+          toast.error(data.error || 'Failed to delete sale')
+          return
+        }
+        toast.success('Sale deleted and stock restored')
+      }
+      setDeleteDialog(false)
+      setDeleteTarget(null)
+      fetchEntries()
+      // Notify all other modules about the deletion
+      // sale-deleted covers inventory restore, dashboard, and reports refresh
+      notifyDataChange('sale-deleted')
+    } catch {
+      toast.error('Failed to delete')
+    }
+  }
+
+  const openDeleteDialog = (entry: any) => {
+    setDeleteTarget(entry)
+    setDeleteDialog(true)
   }
 
   return (
@@ -196,6 +236,7 @@ export function SalesTracking() {
                     <TableHead>Source</TableHead>
                     <TableHead>Salesperson</TableHead>
                     <TableHead>Date</TableHead>
+                    {user?.role === 'admin' && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -204,9 +245,33 @@ export function SalesTracking() {
                       <TableCell className="font-medium">{entry.productName}</TableCell>
                       <TableCell className="text-right">{entry.quantity}</TableCell>
                       <TableCell className="text-right">KES {entry.amount.toLocaleString()}</TableCell>
-                      <TableCell><Badge variant="outline" className="capitalize text-xs">{entry.source}</Badge></TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={`capitalize text-xs ${
+                            entry.source === 'pos'
+                              ? 'border-amber-300 text-amber-800 dark:text-amber-300'
+                              : 'border-orange-300 text-orange-700 dark:text-orange-300'
+                          }`}
+                        >
+                          {entry.source}
+                        </Badge>
+                      </TableCell>
                       <TableCell>{entry.user?.name || '-'}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{new Date(entry.date).toLocaleDateString()}</TableCell>
+                      {user?.role === 'admin' && (
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-500 hover:text-red-700"
+                            onClick={() => openDeleteDialog(entry)}
+                            title={entry.source === 'manual' ? 'Delete manual entry' : 'Delete sale (restores stock)'}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -245,6 +310,39 @@ export function SalesTracking() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddDialog(false)}>Cancel</Button>
             <Button onClick={addEntry} className="bg-amber-800 hover:bg-amber-900 text-white">Add Entry</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialog} onOpenChange={setDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Deletion</DialogTitle>
+          </DialogHeader>
+          {deleteTarget && (
+            <div className="space-y-3">
+              <p className="text-sm">
+                {deleteTarget.source === 'manual' ? (
+                  <>Are you sure you want to delete this manual entry? This will remove it from all sales totals and reports.</>
+                ) : (
+                  <>This will delete the entire sale and <strong>restore all product stock</strong> that was deducted. All items in this sale will be removed from sales tracking, dashboard totals, and reports.</>
+                )}
+              </p>
+              <div className="p-3 bg-muted rounded-lg text-sm">
+                <p><strong>Product:</strong> {deleteTarget.productName}</p>
+                <p><strong>Quantity:</strong> {deleteTarget.quantity}</p>
+                <p><strong>Amount:</strong> KES {deleteTarget.amount?.toLocaleString()}</p>
+                <p><strong>Source:</strong> <span className="capitalize">{deleteTarget.source}</span></p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteDialog(false); setDeleteTarget(null) }}>Cancel</Button>
+            <Button variant="destructive" onClick={deleteEntry}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              {deleteTarget?.source === 'manual' ? 'Delete Entry' : 'Delete Sale & Restore Stock'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

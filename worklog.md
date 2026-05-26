@@ -1,31 +1,27 @@
 ---
 Task ID: 1
 Agent: Main Agent
-Task: Remove all fake/demo/mock/sample data and prepare system for real-world usage
+Task: Full system-wide data alignment and synchronization across all 5 modules
 
 Work Log:
-- Audited entire codebase for mock data sources - found 8 issues across 4 files
-- Updated `src/lib/seed.ts`: Removed demo users (admin@trendz.com, staff@trendz.com), added `isSystemInitialized()`, `createInitialAdmin()`, and `clearBusinessData()` functions
-- Created `src/app/api/setup/route.ts`: GET for checking setup status, POST for creating initial admin
-- Created `src/app/api/public-settings/route.ts`: Public endpoint for shop name/receipt footer (no auth needed)
-- Created `src/app/api/clear-data/route.ts`: Admin-only endpoint to clear all business data
-- Created `src/components/app/setup-wizard.tsx`: 4-step setup wizard (Welcome → Shop Details → Admin Account → Complete)
-- Updated `src/components/app/login.tsx`: Removed demo credentials display, removed auto-seed call, removed hardcoded email placeholder
-- Updated `src/app/page.tsx`: Removed auto-seed on page load, added setup wizard detection flow, replaced direct Login rendering with loading → setup/login → app flow
-- Updated `src/app/api/auth/route.ts`: Removed auto-seed call before login
-- Updated `src/components/app/dashboard.tsx`: Added comprehensive empty state for no-data scenarios (welcome message + CTA), proper empty states for charts (daily sales, category pie), empty states for top products and recent sales
-- Updated `src/components/app/sales-pos.tsx`: Replaced hardcoded "TRENDZ" with dynamic `shopSettings.shopName`, replaced hardcoded receipt footer with `shopSettings.receiptFooter`, added empty state for products grid, fetches settings from `/api/public-settings`
-- Updated `src/components/app/sales-tracking.tsx`: Enhanced empty state with icon, message, and CTA button to navigate to Sales POS
-- Updated `src/components/app/reports.tsx`: Added comprehensive empty state when no data exists, proper empty states for individual charts (sales trend, inventory by category)
-- Updated `src/components/app/settings.tsx`: Added "Danger Zone" section with "Clear All Data" button in Backup tab, triple confirmation (confirm → confirm → type DELETE)
-- Deleted old database and ran `npx prisma db push --accept-data-loss` for clean start
-- Build test passed successfully with no errors
+- Read all 13+ source files (5 components, 10+ API routes, schema, store)
+- Mapped complete data flow: Sale → SalesEntry, SaleItem → Product quantity, Dashboard ← Sale + SalesEntry
+- Identified 6 synchronization gaps
+- FIX 1: Changed POS SalesEntry creation from single aggregated record to individual records per SaleItem with proportional discount distribution
+- FIX 2: Created /api/sales/[id]/route.ts DELETE endpoint with full rollback (restore inventory, delete SalesEntry mirrors, create stock moves, audit log)
+- FIX 3: Created /api/sales-tracking/[id]/route.ts DELETE endpoint for manual entries with admin-only access
+- FIX 4: Updated Dashboard API to include manual entries in recent sales list + added outOfStockProducts stat
+- FIX 5: Updated Sales Tracking UI with delete functionality (manual entries deleted individually, POS entries deleted via sale deletion with stock restore)
+- FIX 6: Verified all CRUD operations emit proper notifyDataChange events and all modules listen for relevant events
+- Build passes successfully with all new routes registered
 
 Stage Summary:
-- System now starts completely clean with no demo data
-- First-time users see a Setup Wizard to create their admin account
-- All modules display proper empty states when no data exists
-- Receipt uses dynamic shop name from settings
-- Admin can clear all business data from Settings > Backup > Danger Zone
-- Auto-seed on every page load removed - seed only creates default settings/categories on first load
-- No demo credentials exposed anywhere in the UI
+- All 5 modules now derive data from the same Prisma/SQLite database
+- POS sales create individual SalesEntry records per item (not aggregated) — Sales Tracking shows per-product detail
+- Discount is proportionally distributed across items so sum of POS SalesEntry amounts = Sale.total (data alignment preserved)
+- Sale deletion fully reverses effects: inventory restored, SalesEntry mirrors deleted, audit trail created
+- Manual entry deletion available for admins
+- Dashboard recent sales now includes both POS and manual entries
+- All modules refresh instantly via notifyDataChange/onDataChange event system
+- All API routes have force-dynamic + Cache-Control: no-store
+- All components have visibilitychange + onDataChange listeners

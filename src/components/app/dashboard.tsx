@@ -12,6 +12,7 @@ interface DashboardData {
   stats: {
     totalProducts: number
     lowStockProducts: number
+    outOfStockProducts: number
     totalSales: number
     monthSales: number
     totalRevenue: number
@@ -20,7 +21,16 @@ interface DashboardData {
     totalSuppliers: number
     totalUsers: number
   }
-  recentSales: any[]
+  recentSales: Array<{
+    id: string
+    type: 'pos' | 'manual'
+    label: string
+    total: number
+    paymentMethod: string
+    user: { name: string } | null
+    date: string
+    itemCount: number
+  }>
   categoryBreakdown: any[]
   topProducts: any[]
   dailySales: { date: string; total: number }[]
@@ -110,7 +120,7 @@ export function Dashboard() {
   const statCards = [
     { title: 'Total Revenue', value: `KES ${stats.totalRevenue.toLocaleString()}`, sub: `KES ${stats.monthRevenue.toLocaleString()} this month`, icon: TrendingUp, color: 'text-green-600' },
     { title: 'Total Sales', value: stats.totalSales, sub: `${stats.monthSales} this month`, icon: ShoppingCart, color: 'text-amber-700' },
-    { title: 'Products', value: stats.totalProducts, sub: `${stats.lowStockProducts} low stock`, icon: Package, color: 'text-blue-600' },
+    { title: 'Products', value: stats.totalProducts, sub: `${stats.lowStockProducts} low, ${stats.outOfStockProducts} out`, icon: Package, color: 'text-blue-600' },
     { title: 'Categories', value: stats.totalCategories, sub: `${stats.totalSuppliers} suppliers`, icon: Truck, color: 'text-orange-600' },
   ]
 
@@ -278,17 +288,26 @@ export function Dashboard() {
             <CardContent>
               <div className="space-y-3">
                 {recentSales.length > 0 ? (
-                  recentSales.map((sale: any) => (
+                  recentSales.map((sale) => (
                     <div key={sale.id} className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium">{sale.invoiceNumber}</p>
+                        <p className="text-sm font-medium">{sale.label}</p>
                         <p className="text-xs text-muted-foreground">
-                          {sale.user?.name} · {new Date(sale.createdAt).toLocaleDateString()}
+                          {sale.user?.name || '-'} · {new Date(sale.date).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-medium">KES {sale.total.toLocaleString()}</p>
-                        <Badge variant="outline" className="text-xs capitalize">{sale.paymentMethod}</Badge>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs capitalize ${
+                            sale.type === 'manual'
+                              ? 'border-orange-300 text-orange-700 dark:text-orange-300'
+                              : 'border-amber-300 text-amber-800 dark:text-amber-300'
+                          }`}
+                        >
+                          {sale.type === 'manual' ? 'Manual' : sale.paymentMethod}
+                        </Badge>
                       </div>
                     </div>
                   ))

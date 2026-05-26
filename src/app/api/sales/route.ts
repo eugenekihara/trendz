@@ -156,18 +156,25 @@ export async function POST(request: Request) {
         })
       }
 
-      // Create sales entry (mirror for Sales Tracking)
-      await tx.salesEntry.create({
-        data: {
-          productName: data.items.map((i: any) => i.productName || i.productId).join(', '),
-          quantity: data.items.reduce((sum: number, i: any) => sum + i.quantity, 0),
-          amount: total,
-          date: new Date(),
-          userId: auth.user!.id,
-          source: 'pos',
-          saleId: newSale.id,
-        },
-      })
+      // Create individual sales entries per item (mirror for Sales Tracking)
+      // Each item gets its own SalesEntry with proportionally distributed discount
+      // This ensures: sum of all POS SalesEntry amounts = Sale.total (after discount)
+      const discountRatio = subtotal > 0 ? total / subtotal : 1 // proportion after discount
+      for (const item of data.items) {
+        const itemTotal = item.price * item.quantity
+        const discountedAmount = Math.round(itemTotal * discountRatio * 100) / 100 // proportional after discount
+        await tx.salesEntry.create({
+          data: {
+            productName: item.productName || item.productId,
+            quantity: item.quantity,
+            amount: discountedAmount,
+            date: new Date(),
+            userId: auth.user!.id,
+            source: 'pos',
+            saleId: newSale.id,
+          },
+        })
+      }
 
       // Check for low stock notifications (quantity is already decremented at this point)
       for (const item of data.items) {
