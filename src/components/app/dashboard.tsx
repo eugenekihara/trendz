@@ -96,6 +96,9 @@ function getDefaultData(): DashboardData {
   }
 }
 
+const MAX_RETRIES = 3
+const RETRY_DELAYS = [1000, 2000, 4000] // Exponential backoff
+
 export function Dashboard() {
   const authFetch = useAppStore((s) => s.authFetch)
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
@@ -110,33 +113,51 @@ export function Dashboard() {
   const lastFetchRef = useRef(0)
   const MIN_FETCH_INTERVAL = 2000 // ms between fetches
   const mountedRef = useRef(true)
+  const abortRef = useRef<AbortController | null>(null)
+  const retryCountRef = useRef(0)
 
-  const fetchDashboard = useCallback(async (showRefresh = false) => {
-    // Prevent concurrent fetches
-    if (fetchingRef.current) return
-    // Prevent rapid re-fetches (debounce)
-    const now = Date.now()
-    if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+  const fetchDashboard = useCallback(async (showRefresh = false, isRetry = false) => {
+    // Prevent concurrent fetches (unless it's a retry)
+    if (fetchingRef.current && !isRetry) return
+    // Prevent rapid re-fetches (debounce) — but allow retries through
+    if (!isRetry) {
+      const now = Date.now()
+      if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+    }
 
     fetchingRef.current = true
-    lastFetchRef.current = now
+    if (!isRetry) lastFetchRef.current = Date.now()
+
+    // Cancel any in-flight request
+    if (abortRef.current) {
+      try { abortRef.current.abort() } catch {}
+    }
+    const controller = new AbortController()
+    abortRef.current = controller
 
     try {
       if (showRefresh) setRefreshing(true)
-      setError(null)
+      if (!isRetry) setError(null)
 
       const res = await authFetch('/api/dashboard')
 
-      if (!mountedRef.current) return
+      // Check if request was aborted or component unmounted
+      if (!mountedRef.current || controller.signal.aborted) return
 
       if (res.ok) {
         const json = await res.json()
+        if (!mountedRef.current) return
+
         // Validate minimum structure to prevent rendering crashes
         if (json && json.stats) {
           setData(json)
+          // Reset retry count on success
+          retryCountRef.current = 0
           // If API returned partial error, show a subtle warning
           if (json._error) {
             setError(json._error)
+          } else {
+            setError(null)
           }
         } else {
           // API returned 200 but invalid structure — use defaults
@@ -152,28 +173,51 @@ export function Dashboard() {
           if (errBody?.error) errorMsg = errBody.error
         } catch {}
 
-        // If we already have data, keep showing it with a warning
-        if (data) {
-          setError(errorMsg)
-        } else {
-          setError(errorMsg)
-          // Use default data so the page renders something useful
-          setData(getDefaultData())
+        if (!mountedRef.current) return
+
+        // Auto-retry on server errors (5xx) or network issues
+        if (res.status >= 500 && retryCountRef.current < MAX_RETRIES) {
+          retryCountRef.current++
+          const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+          console.log(`Dashboard: retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+          setError(`Loading dashboard (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})...`)
+          setTimeout(() => {
+            if (mountedRef.current) {
+              fetchDashboard(false, true)
+            }
+          }, delay)
+          return // Don't finalize yet — retry in progress
         }
+
+        // Max retries exhausted or non-retryable error
+        setError(errorMsg)
+        // Use default data so the page renders something useful instead of blank
+        setData(prev => prev || getDefaultData())
       }
     } catch (err) {
       console.error('Dashboard fetch error:', err)
       if (!mountedRef.current) return
 
-      const errorMsg = 'Network error — please check your connection'
-      if (data) {
-        setError(errorMsg)
-      } else {
-        setError(errorMsg)
-        setData(getDefaultData())
+      // Auto-retry on network errors
+      if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current++
+        const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+        console.log(`Dashboard: network retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+        setError(`Connecting to server (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})...`)
+        setTimeout(() => {
+          if (mountedRef.current) {
+            fetchDashboard(false, true)
+          }
+        }, delay)
+        return // Don't finalize yet — retry in progress
       }
+
+      const errorMsg = 'Network error — please check your connection'
+      setError(errorMsg)
+      // Use default data so the page renders something useful
+      setData(prev => prev || getDefaultData())
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && retryCountRef.current === 0 || retryCountRef.current >= MAX_RETRIES) {
         setLoading(false)
         setRefreshing(false)
       }
@@ -184,9 +228,13 @@ export function Dashboard() {
   // Initial fetch
   useEffect(() => {
     mountedRef.current = true
+    retryCountRef.current = 0
     fetchDashboard()
     return () => {
       mountedRef.current = false
+      if (abortRef.current) {
+        try { abortRef.current.abort() } catch {}
+      }
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -196,6 +244,7 @@ export function Dashboard() {
       if (document.visibilityState === 'visible') {
         const now = Date.now()
         if (now - lastFetchRef.current > MIN_FETCH_INTERVAL) {
+          retryCountRef.current = 0
           fetchDashboard()
         }
       }
@@ -210,12 +259,22 @@ export function Dashboard() {
       if (DASHBOARD_EVENTS.includes(event)) {
         const now = Date.now()
         if (now - lastFetchRef.current > MIN_FETCH_INTERVAL) {
+          retryCountRef.current = 0
           fetchDashboard()
         }
       }
     })
     return unsubscribe
   }, [onDataChange, fetchDashboard])
+
+  // Manual retry handler
+  const handleRetry = useCallback(() => {
+    retryCountRef.current = 0
+    lastFetchRef.current = 0 // Reset debounce for manual retry
+    setLoading(true)
+    setError(null)
+    fetchDashboard(true)
+  }, [fetchDashboard])
 
   // Loading skeleton
   if (loading) {
@@ -249,7 +308,7 @@ export function Dashboard() {
             </div>
             <h3 className="text-lg font-semibold">Failed to Load Dashboard</h3>
             <p className="text-sm text-muted-foreground">{error}</p>
-            <Button variant="outline" onClick={() => fetchDashboard(true)}>
+            <Button variant="outline" onClick={handleRetry}>
               <RefreshCw className="h-4 w-4 mr-2" /> Retry
             </Button>
           </div>
@@ -326,7 +385,7 @@ export function Dashboard() {
             <AlertTriangle className="h-4 w-4" />
             <span>Some data may be unavailable. {error}</span>
           </div>
-          <Button variant="outline" size="sm" onClick={() => fetchDashboard(true)}>
+          <Button variant="outline" size="sm" onClick={handleRetry}>
             <RefreshCw className="h-3 w-3 mr-1" /> Retry
           </Button>
         </div>

@@ -103,30 +103,82 @@ export function Inventory() {
 
   // Debounce ref for fetchProducts — prevents triple-fetch on save
   const lastFetchRef = useRef(0)
+  const mountedRef = useRef(true)
+  const retryCountRef = useRef(0)
+  const fetchingRef = useRef(false)
+  const MAX_RETRIES = 3
+  const RETRY_DELAYS = [1000, 2000, 4000]
 
-  const fetchProducts = useCallback(async () => {
+  const fetchProducts = useCallback(async (isRetry = false) => {
+    // Prevent concurrent fetches (unless it's a retry)
+    if (fetchingRef.current && !isRetry) return
     // Debounce: don't re-fetch if we just fetched within the last 2000ms
-    const now = Date.now()
-    if (now - lastFetchRef.current < 2000) return
-    lastFetchRef.current = now
-    setError(null)
+    if (!isRetry) {
+      const now = Date.now()
+      if (now - lastFetchRef.current < 2000) return
+      lastFetchRef.current = now
+    }
+
+    fetchingRef.current = true
+    if (!isRetry) setError(null)
+
     try {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       if (filterCategory !== 'all') params.set('categoryId', filterCategory)
       if (filterStock !== 'all') params.set('stock', filterStock)
       const res = await authFetch(`/api/inventory?${params}`)
+
+      if (!mountedRef.current) return
+
       if (res.ok) {
         const data = await res.json()
-        setProducts(data.products)
+        setProducts(Array.isArray(data?.products) ? data.products : [])
+        retryCountRef.current = 0
+        setError(null)
       } else {
-        setError('Failed to fetch products')
+        // Auto-retry on 5xx errors
+        if (res.status >= 500 && retryCountRef.current < MAX_RETRIES) {
+          retryCountRef.current++
+          const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+          console.log(`Inventory: retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+          setError(`Loading products (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})...`)
+          setTimeout(() => {
+            if (mountedRef.current) fetchProducts(true)
+          }, delay)
+          return
+        }
+
+        let errorMsg = 'Failed to fetch products'
+        try {
+          const errBody = await res.json()
+          if (errBody?.error) errorMsg = errBody.error
+        } catch {}
+        setError(errorMsg)
+        // Keep existing products if we have them
       }
     } catch (error) {
       console.error('Fetch products error:', error)
+      if (!mountedRef.current) return
+
+      // Auto-retry on network errors
+      if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current++
+        const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+        console.log(`Inventory: network retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+        setError(`Connecting to server (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})...`)
+        setTimeout(() => {
+          if (mountedRef.current) fetchProducts(true)
+        }, delay)
+        return
+      }
+
       setError('Network error — please check your connection')
     } finally {
-      setLoading(false)
+      if (mountedRef.current && (retryCountRef.current === 0 || retryCountRef.current >= MAX_RETRIES)) {
+        setLoading(false)
+      }
+      fetchingRef.current = false
     }
   }, [authFetch, search, filterCategory, filterStock])
 
@@ -147,18 +199,24 @@ export function Inventory() {
   }, [authFetch])
 
   useEffect(() => {
+    mountedRef.current = true
     fetchCategories()
     fetchSuppliers()
-  }, [fetchCategories, fetchSuppliers])
-
-  useEffect(() => {
     fetchProducts()
-  }, [fetchProducts])
+    return () => { mountedRef.current = false }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch products when search/filter changes
+  useEffect(() => {
+    retryCountRef.current = 0
+    fetchProducts()
+  }, [search, filterCategory, filterStock]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Subscribe to cross-module data changes for instant refresh
   useEffect(() => {
     const unsubscribe = onDataChange((event: DataChangeEvent) => {
       if (INVENTORY_REFRESH_EVENTS.includes(event)) {
+        retryCountRef.current = 0
         fetchProducts()
       }
       if (event === 'category-changed') {
@@ -174,7 +232,10 @@ export function Inventory() {
   // Refresh products when tab becomes visible (covers SPA navigation from Sales back to Inventory)
   useEffect(() => {
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') fetchProducts()
+      if (document.visibilityState === 'visible') {
+        retryCountRef.current = 0
+        fetchProducts()
+      }
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -353,6 +414,19 @@ export function Inventory() {
         </div>
       </div>
 
+      {/* Error banner (partial data loaded) */}
+      {error && products.length > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="h-4 w-4" />
+            <span>Some data may be unavailable. {error}</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => { retryCountRef.current = 0; lastFetchRef.current = 0; fetchProducts(); }}>
+            <RefreshCw className="h-3 w-3 mr-1" /> Retry
+          </Button>
+        </div>
+      )}
+
       {/* Products Table */}
       <Card>
         <CardContent className="p-0">
@@ -366,7 +440,7 @@ export function Inventory() {
                 </div>
                 <h3 className="text-lg font-semibold">Failed to Load Inventory</h3>
                 <p className="text-sm text-muted-foreground">{error}</p>
-                <Button variant="outline" onClick={() => { setError(null); fetchProducts(); }}>
+                <Button variant="outline" onClick={() => { retryCountRef.current = 0; lastFetchRef.current = 0; setError(null); fetchProducts(); }}>
                   <RefreshCw className="h-4 w-4 mr-2" /> Retry
                 </Button>
               </div>

@@ -27,12 +27,12 @@ function safeLocaleString(val: any, fallback = '0'): string {
 const SALES_TRACKING_EVENTS: DataChangeEvent[] = [
   'sale-created',
   'sale-deleted',
-  'product-updated',     // product name changes could affect display
+  'product-updated',
   'product-deleted',
-  'inventory-changed',   // stock changes could affect context
+  'inventory-changed',
   'manual-entry-created',
-  'settings-changed',    // currency/format changes
-  'credit-changed',      // credit order changes
+  'settings-changed',
+  'credit-changed',
 ]
 
 const defaultSummary = {
@@ -46,6 +46,9 @@ const defaultSummary = {
   creditAmount: 0,
   creditCount: 0,
 }
+
+const MAX_RETRIES = 3
+const RETRY_DELAYS = [1000, 2000, 4000]
 
 export function SalesTracking() {
   const user = useAppStore((s) => s.user)
@@ -67,51 +70,101 @@ export function SalesTracking() {
 
   const fetchingRef = useRef(false)
   const lastFetchRef = useRef(0)
+  const mountedRef = useRef(true)
+  const retryCountRef = useRef(0)
   const MIN_FETCH_INTERVAL = 2000
 
-  const fetchEntries = useCallback(async (showRefresh = false) => {
-    if (fetchingRef.current) return
-    const now = Date.now()
-    if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+  const fetchEntries = useCallback(async (showRefresh = false, isRetry = false) => {
+    if (fetchingRef.current && !isRetry) return
+    if (!isRetry) {
+      const now = Date.now()
+      if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+    }
+
     fetchingRef.current = true
-    lastFetchRef.current = now
+    if (!isRetry) lastFetchRef.current = Date.now()
 
     try {
-      setError(null)
       if (showRefresh) setRefreshing(true)
+      if (!isRetry) setError(null)
       const params = new URLSearchParams()
       if (startDate) params.set('startDate', startDate)
       if (endDate) params.set('endDate', endDate)
       params.set('limit', '50')
       const res = await authFetch(`/api/sales-tracking?${params}`)
+
+      if (!mountedRef.current) return
+
       if (res.ok) {
         const data = await res.json()
-        setEntries(data.entries)
-        // Use server-computed summary (not affected by pagination)
-        if (data.summary) {
+        // Null-safe access for entries and summary
+        setEntries(Array.isArray(data?.entries) ? data.entries : [])
+        if (data?.summary) {
           setSummary({ ...defaultSummary, ...data.summary })
         }
+        retryCountRef.current = 0
+        setError(null)
       } else {
-        setError('Failed to fetch sales entries')
+        // Auto-retry on 5xx errors
+        if (res.status >= 500 && retryCountRef.current < MAX_RETRIES) {
+          retryCountRef.current++
+          const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+          console.log(`SalesTracking: retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+          setError(`Loading data (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})...`)
+          setTimeout(() => {
+            if (mountedRef.current) fetchEntries(false, true)
+          }, delay)
+          return
+        }
+
+        let errorMsg = 'Failed to fetch sales entries'
+        try {
+          const errBody = await res.json()
+          if (errBody?.error) errorMsg = errBody.error
+        } catch {}
+        setError(errorMsg)
+        // Keep existing data if we have it
+        setEntries(prev => prev)
       }
     } catch (error) {
       console.error('Fetch entries error:', error)
+      if (!mountedRef.current) return
+
+      // Auto-retry on network errors
+      if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current++
+        const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+        console.log(`SalesTracking: network retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+        setError(`Connecting to server (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})...`)
+        setTimeout(() => {
+          if (mountedRef.current) fetchEntries(false, true)
+        }, delay)
+        return
+      }
+
       setError('Network error — please check your connection')
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      if (mountedRef.current && (retryCountRef.current === 0 || retryCountRef.current >= MAX_RETRIES)) {
+        setLoading(false)
+        setRefreshing(false)
+      }
       fetchingRef.current = false
     }
-  }, [authFetch, startDate, endDate])
+  }, [authFetch, startDate, endDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    mountedRef.current = true
     fetchEntries()
+    return () => { mountedRef.current = false }
   }, [fetchEntries])
 
   // Refresh data when tab becomes visible (covers SPA navigation)
   useEffect(() => {
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') fetchEntries()
+      if (document.visibilityState === 'visible') {
+        retryCountRef.current = 0
+        fetchEntries()
+      }
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => document.removeEventListener('visibilitychange', onVisibilityChange)
@@ -121,6 +174,7 @@ export function SalesTracking() {
   useEffect(() => {
     const unsubscribe = onDataChange((event: DataChangeEvent) => {
       if (SALES_TRACKING_EVENTS.includes(event)) {
+        retryCountRef.current = 0
         fetchEntries()
       }
     })
@@ -142,8 +196,6 @@ export function SalesTracking() {
       setAddDialog(false)
       setForm({ productName: '', quantity: '', amount: '', date: '' })
       fetchEntries()
-      // Notify all other modules about the new manual entry
-      // This is critical — Dashboard and Reports must refresh to include this manual entry
       notifyDataChange('manual-entry-created')
     } catch {
       toast.error('Failed to add entry')
@@ -154,7 +206,6 @@ export function SalesTracking() {
     if (!deleteTarget) return
     try {
       if (deleteTarget.source === 'manual') {
-        // Delete manual entry through sales-tracking API
         const res = await authFetch(`/api/sales-tracking/${deleteTarget.id}`, { method: 'DELETE' })
         if (!res.ok) {
           const data = await res.json()
@@ -163,7 +214,6 @@ export function SalesTracking() {
         }
         toast.success('Entry deleted')
       } else if (deleteTarget.source === 'credit' && deleteTarget.creditOrderId) {
-        // Delete credit order through credits API (restores inventory)
         const res = await authFetch(`/api/credits/${deleteTarget.creditOrderId}`, { method: 'DELETE' })
         if (!res.ok) {
           const data = await res.json()
@@ -172,7 +222,6 @@ export function SalesTracking() {
         }
         toast.success('Credit order deleted and stock restored')
       } else if (deleteTarget.source === 'pos' && deleteTarget.saleId) {
-        // Delete POS sale through sales API (restores inventory)
         const res = await authFetch(`/api/sales/${deleteTarget.saleId}`, { method: 'DELETE' })
         if (!res.ok) {
           const data = await res.json()
@@ -184,8 +233,6 @@ export function SalesTracking() {
       setDeleteDialog(false)
       setDeleteTarget(null)
       fetchEntries()
-      // Notify all other modules about the deletion
-      // sale-deleted covers inventory restore, dashboard, and reports refresh
       notifyDataChange('sale-deleted')
     } catch {
       toast.error('Failed to delete')
@@ -197,9 +244,17 @@ export function SalesTracking() {
     setDeleteDialog(true)
   }
 
+  const handleRetry = useCallback(() => {
+    retryCountRef.current = 0
+    lastFetchRef.current = 0
+    setLoading(true)
+    setError(null)
+    fetchEntries(true)
+  }, [fetchEntries])
+
   return (
     <div className="space-y-4">
-      {/* Summary — uses server-computed totals, not affected by pagination */}
+      {/* Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card>
           <CardContent className="p-4">
@@ -210,34 +265,34 @@ export function SalesTracking() {
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Entries</p>
-            <p className="text-2xl font-bold">{summary.totalEntries}</p>
+            <p className="text-2xl font-bold">{safeNum(summary.totalEntries)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Quantity</p>
-            <p className="text-2xl font-bold">{summary.totalQuantity}</p>
+            <p className="text-2xl font-bold">{safeNum(summary.totalQuantity)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground text-amber-700">POS Sales</p>
             <p className="text-xl font-bold">KES {safeLocaleString(summary.posAmount)}</p>
-            <p className="text-xs text-muted-foreground">{summary.posCount} entries</p>
+            <p className="text-xs text-muted-foreground">{safeNum(summary.posCount)} entries</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground text-purple-700">Credit Sales</p>
             <p className="text-xl font-bold">KES {safeLocaleString(summary.creditAmount)}</p>
-            <p className="text-xs text-muted-foreground">{summary.creditCount} entries</p>
+            <p className="text-xs text-muted-foreground">{safeNum(summary.creditCount)} entries</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground text-orange-600">Manual Entries</p>
             <p className="text-xl font-bold">KES {safeLocaleString(summary.manualAmount)}</p>
-            <p className="text-xs text-muted-foreground">{summary.manualCount} entries</p>
+            <p className="text-xs text-muted-foreground">{safeNum(summary.manualCount)} entries</p>
           </CardContent>
         </Card>
       </div>
@@ -251,7 +306,7 @@ export function SalesTracking() {
           <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-9 text-sm w-40" />
         </div>
         <Button variant="outline" size="sm" onClick={() => { setStartDate(''); setEndDate('') }}>Clear</Button>
-        <Button variant="outline" size="icon" onClick={() => fetchEntries(true)} disabled={refreshing} title="Refresh">
+        <Button variant="outline" size="icon" onClick={() => { retryCountRef.current = 0; fetchEntries(true); }} disabled={refreshing} title="Refresh">
           <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
         </Button>
         <div className="flex-1" />
@@ -262,12 +317,25 @@ export function SalesTracking() {
         )}
       </div>
 
+      {/* Error banner with retry */}
+      {error && entries.length > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="h-4 w-4" />
+            <span>Some data may be unavailable. {error}</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleRetry}>
+            <RefreshCw className="h-3 w-3 mr-1" /> Retry
+          </Button>
+        </div>
+      )}
+
       {/* Table */}
       <Card>
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 text-center text-muted-foreground">Loading...</div>
-          ) : error && !loading && entries.length === 0 ? (
+          ) : error && entries.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
                 <div className="max-w-md mx-auto space-y-4">
@@ -276,7 +344,7 @@ export function SalesTracking() {
                   </div>
                   <h3 className="text-lg font-semibold">Failed to Load Sales Data</h3>
                   <p className="text-sm text-muted-foreground">{error}</p>
-                  <Button variant="outline" onClick={() => fetchEntries(true)}>
+                  <Button variant="outline" onClick={handleRetry}>
                     <RefreshCw className="h-4 w-4 mr-2" /> Retry
                   </Button>
                 </div>
@@ -313,8 +381,8 @@ export function SalesTracking() {
                 <TableBody>
                   {entries.map((entry) => (
                     <TableRow key={entry.id}>
-                      <TableCell className="font-medium">{entry.productName}</TableCell>
-                      <TableCell className="text-right">{entry.quantity}</TableCell>
+                      <TableCell className="font-medium">{entry.productName || 'Unknown'}</TableCell>
+                      <TableCell className="text-right">{safeNum(entry.quantity)}</TableCell>
                       <TableCell className="text-right">KES {safeLocaleString(entry.amount)}</TableCell>
                       <TableCell>
                         <Badge
@@ -327,11 +395,13 @@ export function SalesTracking() {
                               : 'border-orange-300 text-orange-700 dark:text-orange-300'
                           }`}
                         >
-                          {entry.source}
+                          {entry.source || 'unknown'}
                         </Badge>
                       </TableCell>
                       <TableCell>{entry.user?.name || '-'}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{new Date(entry.date).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {entry.date ? new Date(entry.date).toLocaleDateString() : '-'}
+                      </TableCell>
                       {user?.role === 'admin' && (
                         <TableCell className="text-right">
                           <Button
@@ -405,10 +475,10 @@ export function SalesTracking() {
                 )}
               </p>
               <div className="p-3 bg-muted rounded-lg text-sm">
-                <p><strong>Product:</strong> {deleteTarget.productName}</p>
-                <p><strong>Quantity:</strong> {deleteTarget.quantity}</p>
+                <p><strong>Product:</strong> {deleteTarget.productName || 'Unknown'}</p>
+                <p><strong>Quantity:</strong> {safeNum(deleteTarget.quantity)}</p>
                 <p><strong>Amount:</strong> KES {safeLocaleString(deleteTarget.amount)}</p>
-                <p><strong>Source:</strong> <span className="capitalize">{deleteTarget.source}</span></p>
+                <p><strong>Source:</strong> <span className="capitalize">{deleteTarget.source || 'unknown'}</span></p>
               </div>
             </div>
           )}

@@ -77,6 +77,9 @@ function safeLocaleString(val: any, fallback = '0'): string {
   return n === -1 ? fallback : n.toLocaleString()
 }
 
+const MAX_RETRIES = 3
+const RETRY_DELAYS = [1000, 2000, 4000]
+
 export function Reports() {
   const authFetch = useAppStore((s) => s.authFetch)
   const setCurrentPage = useAppStore((s) => s.setCurrentPage)
@@ -90,33 +93,55 @@ export function Reports() {
   // Prevent concurrent fetches and rapid re-fetches
   const fetchingRef = useRef(false)
   const lastFetchRef = useRef(0)
+  const mountedRef = useRef(true)
+  const retryCountRef = useRef(0)
   const MIN_FETCH_INTERVAL = 2000
 
-  const fetchReport = useCallback(async (showRefresh = false) => {
-    if (fetchingRef.current) return
-    const now = Date.now()
-    if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+  const fetchReport = useCallback(async (showRefresh = false, isRetry = false) => {
+    if (fetchingRef.current && !isRetry) return
+    if (!isRetry) {
+      const now = Date.now()
+      if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
+    }
 
     fetchingRef.current = true
-    lastFetchRef.current = now
+    if (!isRetry) lastFetchRef.current = Date.now()
 
     try {
       if (showRefresh) setRefreshing(true)
-      setError(null)
+      if (!isRetry) setError(null)
       const res = await authFetch(`/api/reports?period=${period}`)
+
+      if (!mountedRef.current) return
+
       if (res.ok) {
         const reportData = await res.json()
         if (reportData && reportData.summary) {
           setData(reportData)
+          retryCountRef.current = 0
           if (reportData._error) {
             setError(reportData._error)
+          } else {
+            setError(null)
           }
         } else {
           // Invalid structure — set default data
-          setData(null)
+          setData(prev => prev) // Keep existing data if any
           setError('Received invalid data from server')
         }
       } else {
+        // Auto-retry on 5xx errors
+        if (res.status >= 500 && retryCountRef.current < MAX_RETRIES) {
+          retryCountRef.current++
+          const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+          console.log(`Reports: retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+          setError(`Loading reports (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})...`)
+          setTimeout(() => {
+            if (mountedRef.current) fetchReport(false, true)
+          }, delay)
+          return
+        }
+
         let errorMsg = `Failed to load reports (${res.status})`
         try {
           const errBody = await res.json()
@@ -126,16 +151,35 @@ export function Reports() {
       }
     } catch (err) {
       console.error('Fetch report error:', err)
+      if (!mountedRef.current) return
+
+      // Auto-retry on network errors
+      if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current++
+        const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+        console.log(`Reports: network retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+        setError(`Connecting to server (attempt ${retryCountRef.current + 1}/${MAX_RETRIES})...`)
+        setTimeout(() => {
+          if (mountedRef.current) fetchReport(false, true)
+        }, delay)
+        return
+      }
+
       setError('Network error — please check your connection')
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      if (mountedRef.current && (retryCountRef.current === 0 || retryCountRef.current >= MAX_RETRIES)) {
+        setLoading(false)
+        setRefreshing(false)
+      }
       fetchingRef.current = false
     }
-  }, [authFetch, period])
+  }, [authFetch, period]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    mountedRef.current = true
+    retryCountRef.current = 0
     fetchReport()
+    return () => { mountedRef.current = false }
   }, [fetchReport])
 
   // Refresh data when tab becomes visible (with debounce)
@@ -144,6 +188,7 @@ export function Reports() {
       if (document.visibilityState === 'visible') {
         const now = Date.now()
         if (now - lastFetchRef.current > MIN_FETCH_INTERVAL) {
+          retryCountRef.current = 0
           fetchReport()
         }
       }
@@ -158,12 +203,22 @@ export function Reports() {
       if (REPORTS_REFRESH_EVENTS.includes(event)) {
         const now = Date.now()
         if (now - lastFetchRef.current > MIN_FETCH_INTERVAL) {
+          retryCountRef.current = 0
           fetchReport()
         }
       }
     })
     return unsubscribe
   }, [onDataChange, fetchReport])
+
+  // Manual retry handler
+  const handleRetry = useCallback(() => {
+    retryCountRef.current = 0
+    lastFetchRef.current = 0
+    setLoading(true)
+    setError(null)
+    fetchReport(true)
+  }, [fetchReport])
 
   if (loading) {
     return (
@@ -187,7 +242,7 @@ export function Reports() {
             </div>
             <h3 className="text-lg font-semibold">Failed to Load Reports</h3>
             <p className="text-sm text-muted-foreground">{error || 'There was an error loading report data. Please try again.'}</p>
-            <Button variant="outline" onClick={() => fetchReport(true)}>
+            <Button variant="outline" onClick={handleRetry}>
               <RefreshCw className="h-4 w-4 mr-2" /> Retry
             </Button>
           </div>
@@ -231,7 +286,7 @@ export function Reports() {
               <SelectItem value="year">This Year</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={() => fetchReport(true)} disabled={refreshing} title="Refresh">
+          <Button variant="outline" size="icon" onClick={() => { retryCountRef.current = 0; fetchReport(true); }} disabled={refreshing} title="Refresh">
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
@@ -244,7 +299,7 @@ export function Reports() {
             <AlertTriangle className="h-4 w-4" />
             <span>Some report data may be unavailable. {error}</span>
           </div>
-          <Button variant="outline" size="sm" onClick={() => fetchReport(true)}>
+          <Button variant="outline" size="sm" onClick={handleRetry}>
             <RefreshCw className="h-3 w-3 mr-1" /> Retry
           </Button>
         </div>

@@ -68,33 +68,64 @@ export function SalesPOS() {
   })
   const mountedRef = useRef(true)
   const lastRefreshRef = useRef(0)
+  const retryCountRef = useRef(0)
+  const MAX_RETRIES = 3
+  const RETRY_DELAYS = [1000, 2000, 4000]
 
   // Fetch all active products (including out-of-stock so user can see them)
   // Cache-busting timestamp ensures we never get a stale browser-cached response
-  const fetchProducts = useCallback(async (showRefresh = false) => {
+  const fetchProducts = useCallback(async (showRefresh = false, isRetry = false) => {
     // Debounce: don't re-fetch if we just fetched within the last 500ms
-    const now = Date.now()
-    if (now - lastRefreshRef.current < 500 && !showRefresh) return
-    lastRefreshRef.current = now
+    if (!isRetry && !showRefresh) {
+      const now = Date.now()
+      if (now - lastRefreshRef.current < 500) return
+    }
+    lastRefreshRef.current = Date.now()
 
     try {
       if (showRefresh) setRefreshing(true)
       const ts = Date.now()
       const res = await authFetch(`/api/inventory?limit=500&_t=${ts}`)
+      if (!mountedRef.current) return
+
       if (res.ok) {
         const data = await res.json()
         // Show all active products — out-of-stock ones will be displayed but not sellable
-        const activeProducts = data.products.filter((p: any) => p.active !== false)
+        const allProducts = Array.isArray(data?.products) ? data.products : []
+        const activeProducts = allProducts.filter((p: any) => p.active !== false)
         if (mountedRef.current) {
           setProducts(activeProducts)
+          retryCountRef.current = 0
         }
       } else {
         console.error('Failed to fetch products:', res.status)
+        // Auto-retry on 5xx errors
+        if (res.status >= 500 && retryCountRef.current < MAX_RETRIES && mountedRef.current) {
+          retryCountRef.current++
+          const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+          console.log(`POS: retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+          setTimeout(() => {
+            if (mountedRef.current) fetchProducts(false, true)
+          }, delay)
+          return
+        }
       }
     } catch (error) {
       console.error('Fetch products error:', error)
+      if (!mountedRef.current) return
+
+      // Auto-retry on network errors
+      if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current++
+        const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+        console.log(`POS: network retry ${retryCountRef.current}/${MAX_RETRIES} after ${delay}ms`)
+        setTimeout(() => {
+          if (mountedRef.current) fetchProducts(false, true)
+        }, delay)
+        return
+      }
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && (retryCountRef.current === 0 || retryCountRef.current >= MAX_RETRIES)) {
         setLoading(false)
         setRefreshing(false)
       }
