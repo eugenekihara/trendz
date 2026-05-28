@@ -172,7 +172,7 @@ export async function POST(request: Request) {
     if (depositAmount >= totalAmount) {
       paymentStatus = 'fully_paid'
     } else if (depositAmount === 0) {
-      paymentStatus = 'partially_paid' // no deposit yet
+      paymentStatus = 'unpaid' // no deposit paid yet
     }
 
     // Wrap in transaction for atomicity

@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts'
-import { BarChart3, ShoppingCart, Package, TrendingUp, ArrowRight, CreditCard, RefreshCw, DollarSign, AlertTriangle, CheckCircle2, Wallet } from 'lucide-react'
+import { BarChart3, ShoppingCart, Package, TrendingUp, ArrowRight, CreditCard, RefreshCw, DollarSign, AlertTriangle, CheckCircle2, Wallet, Download, FileText, FileSpreadsheet, File } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface ReportData {
   period: string
@@ -89,6 +90,9 @@ export function Reports() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'xlsx' | 'csv'>('xlsx')
+  const [exportOpen, setExportOpen] = useState(false)
 
   // Prevent concurrent fetches and rapid re-fetches
   const fetchingRef = useRef(false)
@@ -220,6 +224,41 @@ export function Reports() {
     fetchReport(true)
   }, [fetchReport])
 
+  // Export handler
+  const handleExport = useCallback(async (format: 'pdf' | 'xlsx' | 'csv') => {
+    setExporting(true)
+    setExportOpen(false)
+    try {
+      const res = await authFetch(`/api/reports/export?format=${format}&period=${period}`)
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: 'Export failed' }))
+        toast.error(errBody.error || 'Failed to export report')
+        return
+      }
+      // Get the blob from the response
+      const blob = await res.blob()
+      // Extract filename from Content-Disposition header
+      const contentDisposition = res.headers.get('Content-Disposition') || ''
+      const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/)
+      const filename = filenameMatch ? filenameMatch[1] : `trendz-report.${format}`
+      // Create download link and trigger download
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+      toast.success(`Report exported as ${format.toUpperCase()}`)
+    } catch (err) {
+      console.error('Export error:', err)
+      toast.error('Failed to export report. Please try again.')
+    } finally {
+      setExporting(false)
+    }
+  }, [authFetch, period])
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -289,6 +328,64 @@ export function Reports() {
           <Button variant="outline" size="icon" onClick={() => { retryCountRef.current = 0; fetchReport(true); }} disabled={refreshing} title="Refresh">
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
+          {/* Export Dropdown */}
+          <div className="relative">
+            <Button
+              variant="outline"
+              onClick={() => setExportOpen(!exportOpen)}
+              disabled={exporting || !data}
+              className="gap-2"
+            >
+              {exporting ? (
+                <>
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  Export
+                </>
+              )}
+            </Button>
+            {exportOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setExportOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 bg-popover border rounded-lg shadow-lg z-50 min-w-[200px] p-1">
+                  <button
+                    onClick={() => handleExport('xlsx')}
+                    className="flex items-center gap-3 w-full px-3 py-2.5 text-sm hover:bg-accent rounded-md transition-colors"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                    <div className="text-left">
+                      <p className="font-medium">Excel (.xlsx)</p>
+                      <p className="text-xs text-muted-foreground">Full data with multiple sheets</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleExport('pdf')}
+                    className="flex items-center gap-3 w-full px-3 py-2.5 text-sm hover:bg-accent rounded-md transition-colors"
+                  >
+                    <FileText className="h-4 w-4 text-red-600" />
+                    <div className="text-left">
+                      <p className="font-medium">PDF Report</p>
+                      <p className="text-xs text-muted-foreground">Formatted printable report</p>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => handleExport('csv')}
+                    className="flex items-center gap-3 w-full px-3 py-2.5 text-sm hover:bg-accent rounded-md transition-colors"
+                  >
+                    <File className="h-4 w-4 text-blue-600" />
+                    <div className="text-left">
+                      <p className="font-medium">CSV (.csv)</p>
+                      <p className="text-xs text-muted-foreground">Raw data for spreadsheets</p>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

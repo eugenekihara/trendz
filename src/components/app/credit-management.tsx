@@ -52,6 +52,7 @@ const CREDIT_EVENTS: DataChangeEvent[] = [
 ]
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
+  unpaid: { label: 'Unpaid', color: 'border-gray-300 text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-950/30', icon: Wallet },
   deposit_paid: { label: 'Deposit Paid', color: 'border-blue-300 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30', icon: Clock },
   partially_paid: { label: 'Partially Paid', color: 'border-orange-300 text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/30', icon: Wallet },
   fully_paid: { label: 'Fully Paid', color: 'border-green-300 text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950/30', icon: CheckCircle2 },
@@ -233,7 +234,14 @@ export function CreditManagement() {
     if (quantity <= 0) {
       setCartItems(cartItems.filter((item) => item.productId !== productId))
     } else {
-      setCartItems(cartItems.map((item) => (item.productId === productId ? { ...item, quantity } : item)))
+      // Enforce stock limit when incrementing
+      const product = products.find((p) => p.id === productId)
+      const maxQty = product?.quantity ?? 0
+      const clampedQty = Math.min(quantity, maxQty)
+      if (clampedQty < quantity) {
+        toast.error(`Only ${maxQty} units available`)
+      }
+      setCartItems(cartItems.map((item) => (item.productId === productId ? { ...item, quantity: clampedQty } : item)))
     }
   }
 
@@ -480,6 +488,7 @@ export function CreditManagement() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="unpaid">Unpaid</SelectItem>
             <SelectItem value="deposit_paid">Deposit Paid</SelectItem>
             <SelectItem value="partially_paid">Partially Paid</SelectItem>
             <SelectItem value="fully_paid">Fully Paid</SelectItem>
