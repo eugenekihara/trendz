@@ -5,6 +5,29 @@ import { verifyAuth } from '@/lib/auth'
 // Force dynamic rendering — never cache this route
 export const dynamic = 'force-dynamic'
 
+// Helper: safely execute a DB query, returning fallback on failure
+// This prevents schema mismatches (missing tables/columns) from crashing the endpoint
+async function safeQuery<T>(label: string, query: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await query()
+  } catch (err) {
+    console.error(`Credits query failed [${label}]:`, err)
+    return fallback
+  }
+}
+
+const EMPTY_SUMMARY = {
+  totalOutstanding: 0,
+  totalCreditAmount: 0,
+  totalDepositPaid: 0,
+  totalPayments: 0,
+  fullyPaidCount: 0,
+  depositPaidCount: 0,
+  partiallyPaidCount: 0,
+  overdueCount: 0,
+  totalOrders: 0,
+}
+
 /**
  * GET /api/credits - List credit orders
  * Query params:
@@ -37,12 +60,8 @@ export async function GET(request: Request) {
       where.paymentStatus = status
     }
 
-    // Search by customer name or phone (post-filter for SQLite)
-    if (search) {
-      // We'll filter after fetching since SQLite text search is limited
-    }
-
-    const creditOrders = await db.creditOrder.findMany({
+    // Fetch credit orders with safeQuery — returns [] if table/column doesn't exist
+    const creditOrders = await safeQuery('credit-orders', () => db.creditOrder.findMany({
       where,
       include: {
         user: { select: { id: true, name: true } },
@@ -57,24 +76,24 @@ export async function GET(request: Request) {
         },
       },
       orderBy: { createdAt: 'desc' },
-    })
+    }), [])
 
     // Post-filter by search term (customer name or phone)
-    let filtered = creditOrders
+    let filtered = Array.isArray(creditOrders) ? creditOrders : []
     if (search) {
       const term = search.toLowerCase()
-      filtered = creditOrders.filter(
+      filtered = filtered.filter(
         (order) =>
-          order.customerName.toLowerCase().includes(term) ||
+          (order.customerName || '').toLowerCase().includes(term) ||
           (order.customerPhone && order.customerPhone.toLowerCase().includes(term))
       )
     }
 
     // Compute summary stats
-    const totalOutstanding = filtered.reduce((sum, o) => sum + o.remainingBalance, 0)
-    const totalCreditAmount = filtered.reduce((sum, o) => sum + o.totalAmount, 0)
-    const totalDepositPaid = filtered.reduce((sum, o) => sum + o.depositAmount, 0)
-    const totalPayments = filtered.reduce((sum, o) => sum + o.payments.reduce((s, p) => s + p.amount, 0), 0)
+    const totalOutstanding = filtered.reduce((sum, o) => sum + (o.remainingBalance || 0), 0)
+    const totalCreditAmount = filtered.reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+    const totalDepositPaid = filtered.reduce((sum, o) => sum + (o.depositAmount || 0), 0)
+    const totalPayments = filtered.reduce((sum, o) => sum + (Array.isArray(o.payments) ? o.payments.reduce((s, p) => s + (p.amount || 0), 0) : 0), 0)
     const fullyPaidCount = filtered.filter((o) => o.paymentStatus === 'fully_paid').length
     const depositPaidCount = filtered.filter((o) => o.paymentStatus === 'deposit_paid').length
     const partiallyPaidCount = filtered.filter((o) => o.paymentStatus === 'partially_paid').length
@@ -98,8 +117,13 @@ export async function GET(request: Request) {
       { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
     )
   } catch (error) {
-    console.error('Credits GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch credit orders' }, { status: 500 })
+    console.error('Credits GET fatal error:', error)
+    // Return valid empty structure so the frontend never crashes
+    return NextResponse.json({
+      creditOrders: [],
+      summary: EMPTY_SUMMARY,
+      _error: 'Failed to fetch credit orders — database schema may need to be updated. Run: npx prisma db push',
+    }, { status: 200 }) // Return 200 with empty data so frontend renders the empty state
   }
 }
 
@@ -285,6 +309,13 @@ export async function POST(request: Request) {
     console.error('Credits POST error:', error)
     if (error.message?.startsWith('Insufficient stock')) {
       return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+    // Detect schema mismatch errors and give actionable message
+    const msg = error?.message || ''
+    if (msg.includes('does not exist') || msg.includes('column') && msg.includes('not found')) {
+      return NextResponse.json({
+        error: 'Database schema is out of sync. Please run: npx prisma db push',
+      }, { status: 500 })
     }
     return NextResponse.json({ error: 'Failed to create credit order' }, { status: 500 })
   }

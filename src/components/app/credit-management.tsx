@@ -96,6 +96,10 @@ export function CreditManagement() {
   const fetchingRef = useRef(false)
   const lastFetchRef = useRef(0)
   const MIN_FETCH_INTERVAL = 2000
+  const mountedRef = useRef(true)
+  const retryCountRef = useRef(0)
+  const MAX_RETRIES = 3
+  const RETRY_DELAYS = [1000, 2000, 4000]
 
   // Filters
   const [statusFilter, setStatusFilter] = useState('all')
@@ -150,26 +154,62 @@ export function CreditManagement() {
       const params = new URLSearchParams()
       if (statusFilter && statusFilter !== 'all') params.set('status', statusFilter)
       if (searchTerm) params.set('search', searchTerm)
+      
       const res = await authFetch(`/api/credits?${params}`)
+      if (!mountedRef.current) return
+      
       if (res.ok) {
         const data = await res.json()
-        setCreditOrders(data.creditOrders || [])
-        setSummary(data.summary || defaultSummary)
+        if (mountedRef.current) {
+          setCreditOrders(Array.isArray(data.creditOrders) ? data.creditOrders : [])
+          setSummary(data.summary || defaultSummary)
+          // Show schema warning if present but don't block rendering
+          if (data._error) {
+            console.warn('Credits API warning:', data._error)
+          }
+        }
+        retryCountRef.current = 0
       } else {
-        setError('Failed to fetch credit orders')
+        // Auto-retry on 5xx errors
+        if (res.status >= 500 && retryCountRef.current < MAX_RETRIES && mountedRef.current) {
+          retryCountRef.current++
+          const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+          setTimeout(() => {
+            if (mountedRef.current) fetchCreditOrders(false)
+          }, delay)
+          return
+        }
+        if (mountedRef.current) {
+          setError('Failed to fetch credit orders')
+        }
       }
     } catch (error) {
       console.error('Fetch credit orders error:', error)
+      if (!mountedRef.current) return
+      
+      // Auto-retry on network errors
+      if (retryCountRef.current < MAX_RETRIES) {
+        retryCountRef.current++
+        const delay = RETRY_DELAYS[retryCountRef.current - 1] || 4000
+        setTimeout(() => {
+          if (mountedRef.current) fetchCreditOrders(false)
+        }, delay)
+        return
+      }
       setError('Network error — please check your connection')
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      if (mountedRef.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
       fetchingRef.current = false
     }
   }, [authFetch, statusFilter, searchTerm])
 
   useEffect(() => {
+    mountedRef.current = true
     fetchCreditOrders()
+    return () => { mountedRef.current = false }
   }, [fetchCreditOrders])
 
   // Refresh on visibility change
