@@ -53,3 +53,35 @@ Stage Summary:
 - Payment history tracking with automatic status updates
 - Access control: staff can create/view own, admin can view/edit/delete all
 - Build succeeds cleanly with all new routes
+---
+Task ID: auth-system
+Agent: Main Agent
+Task: Implement complete authentication system with Sign Up and Login
+
+Work Log:
+- Analyzed existing auth: plain-text passwords, header-based spoofable auth, no session persistence
+- Installed bcryptjs, jose, @types/bcryptjs packages; removed unused next-auth
+- Rewrote src/lib/auth.ts with JWT session tokens (jose), bcryptjs password hashing, cookie-based verifyAuth
+- Created /api/auth/login (POST - bcrypt password verification, JWT session cookie)
+- Created /api/auth/register (POST - validation, duplicate check, staff role default, session cookie)
+- Created /api/auth/logout (POST - clear session cookie)
+- Created /api/auth/session (GET - check session from cookie, return user data)
+- Built Registration page (register.tsx) with full validation, password strength indicator, show/hide password
+- Updated Login page with Create Account link, show/hide password
+- Updated Zustand store: removed x-user-id/x-user-role header injection, added server logout call
+- Updated page.tsx: session restoration on page load via /api/auth/session
+- Updated setup wizard, seed.ts, users API, staff-profile/password for bcryptjs hashing
+- Auto-upgrade: existing plain-text passwords are hashed on first successful login
+- Role verification now uses database value (not client-supplied headers)
+- Consistent 6-character minimum password length across all flows
+- All 8 API tests passed: login, register, duplicate check, invalid credentials, session check, dashboard auth, logout
+- Pushed to GitHub: commit d3e38c4
+
+Stage Summary:
+- Complete JWT-based authentication system with httpOnly cookie sessions
+- Secure password hashing with bcryptjs replacing plain-text storage
+- Registration page with name/email/phone/password/confirm validation
+- Session persistence (survives page refresh via cookie)
+- New users default to Staff role
+- Removed header-based auth spoofing vulnerability
+- 21 files changed, 918 insertions, 224 deletions
