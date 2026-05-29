@@ -20,6 +20,11 @@ export async function GET() {
       },
     })
 
+    // Guard against null user — session was valid but user was deleted
+    if (!user) {
+      return NextResponse.json({ error: 'User account not found' }, { status: 404, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
+    }
+
     return NextResponse.json(user, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Staff profile GET error:', error)

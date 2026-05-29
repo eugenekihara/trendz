@@ -33,6 +33,8 @@ import {
   BarChart3,
   DollarSign,
   Calendar,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { toast } from 'sonner'
@@ -49,6 +51,7 @@ interface ProfileData {
   notifySales: boolean
   notifyInventory: boolean
   notifyTasks: boolean
+  approvalStatus?: string
   createdAt: string
 }
 
@@ -75,10 +78,14 @@ export function StaffSettings() {
   const updateUser = useAppStore((s) => s.updateUser)
   const authFetch = useAppStore((s) => s.authFetch)
   const onDataChange = useAppStore((s) => s.onDataChange)
+  const logout = useAppStore((s) => s.logout)
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [salesData, setSalesData] = useState<SalesData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [salesError, setSalesError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [retrying, setRetrying] = useState(false)
 
   // Profile form
   const [profileForm, setProfileForm] = useState({
@@ -109,35 +116,64 @@ export function StaffSettings() {
 
   const fetchProfile = useCallback(async () => {
     try {
+      setProfileError(null)
       const res = await authFetch('/api/staff-profile')
       if (res.ok) {
         const data = await res.json()
-        setProfile(data)
-        setProfileForm({
-          name: data.name || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          avatar: data.avatar || '',
-        })
-        setTheme(data.theme || 'light')
-        setLanguage(data.language || 'en')
-        setNotifySales(data.notifySales ?? true)
-        setNotifyInventory(data.notifyInventory ?? true)
-        setNotifyTasks(data.notifyTasks ?? true)
+        if (data && typeof data === 'object' && data.id) {
+          setProfile(data)
+          setProfileForm({
+            name: data.name || '',
+            email: data.email || '',
+            phone: data.phone || '',
+            avatar: data.avatar || '',
+          })
+          setTheme(data.theme || 'light')
+          setLanguage(data.language || 'en')
+          setNotifySales(data.notifySales ?? true)
+          setNotifyInventory(data.notifyInventory ?? true)
+          setNotifyTasks(data.notifyTasks ?? true)
+        } else {
+          // API returned OK but data is not a valid user object
+          console.error('Profile API returned unexpected data:', data)
+          setProfileError('Received invalid profile data from server')
+        }
+      } else {
+        // Read the error message from the API response
+        let errorMsg = 'Failed to load profile'
+        try {
+          const errorData = await res.json()
+          if (errorData?.error) errorMsg = errorData.error
+        } catch { /* ignore json parse errors */ }
+
+        if (res.status === 401) {
+          setProfileError('Your session has expired. Please log in again.')
+        } else if (res.status === 404) {
+          setProfileError('User account not found. Please contact an administrator.')
+        } else {
+          setProfileError(errorMsg)
+        }
       }
     } catch (error) {
       console.error('Fetch profile error:', error)
+      setProfileError('Network error — could not reach the server')
     }
   }, [authFetch])
 
   const fetchSalesData = useCallback(async () => {
     try {
+      setSalesError(null)
       const res = await authFetch('/api/staff-sales')
       if (res.ok) {
-        setSalesData(await res.json())
+        const data = await res.json()
+        setSalesData(data)
+      } else {
+        // Non-critical: sales data failure shouldn't block the profile page
+        setSalesError('Could not load sales data')
       }
     } catch (error) {
       console.error('Fetch sales data error:', error)
+      setSalesError('Network error loading sales data')
     }
   }, [authFetch])
 
@@ -169,6 +205,16 @@ export function StaffSettings() {
     })
     return unsubscribe
   }, [onDataChange, fetchProfile, fetchSalesData])
+
+  const handleRetry = async () => {
+    setRetrying(true)
+    try {
+      await fetchProfile()
+      await fetchSalesData()
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   const saveProfile = async () => {
     setSaving(true)
@@ -235,7 +281,9 @@ export function StaffSettings() {
         return
       }
       const data = await res.json()
-      setProfile(data)
+      if (data && typeof data === 'object') {
+        setProfile(data)
+      }
       toast.success('Preference updated')
 
       // Apply theme change
@@ -278,10 +326,53 @@ export function StaffSettings() {
     )
   }
 
+  // Auth error — session expired, suggest re-login
+  if (!profile && profileError?.includes('session has expired')) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-4">
+          <AlertCircle className="h-12 w-12 text-amber-600 mx-auto" />
+          <div>
+            <h3 className="text-lg font-semibold mb-1">Session Expired</h3>
+            <p className="text-muted-foreground mb-4">{profileError}</p>
+            <Button onClick={logout} className="bg-amber-800 hover:bg-amber-900 text-white">
+              Log In Again
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Profile failed to load — show error with retry (not a session issue)
   if (!profile) {
     return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground">
-        Failed to load profile data
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center space-y-4 max-w-md">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
+          <div>
+            <h3 className="text-lg font-semibold mb-1">Could Not Load Profile</h3>
+            <p className="text-muted-foreground mb-4">
+              {profileError || 'An unexpected error occurred while loading your profile data.'}
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <Button
+                onClick={handleRetry}
+                disabled={retrying}
+                variant="outline"
+                className="gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
+                {retrying ? 'Retrying...' : 'Try Again'}
+              </Button>
+              {profileError?.includes('session') && (
+                <Button onClick={logout} className="bg-amber-800 hover:bg-amber-900 text-white">
+                  Log In Again
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -293,13 +384,15 @@ export function StaffSettings() {
         <Avatar className="h-16 w-16">
           <AvatarImage src={profile.avatar || undefined} />
           <AvatarFallback className="bg-gradient-to-br from-amber-700 to-amber-500 text-white text-xl font-bold">
-            {getInitials(profile.name)}
+            {getInitials(profile.name || 'U')}
           </AvatarFallback>
         </Avatar>
         <div>
-          <h2 className="text-xl font-bold">{profile.name}</h2>
+          <h2 className="text-xl font-bold">{profile.name || 'Unknown'}</h2>
           <p className="text-muted-foreground capitalize">{profile.role} · {profile.email}</p>
-          <p className="text-xs text-muted-foreground mt-1">Member since {new Date(profile.createdAt).toLocaleDateString()}</p>
+          {profile.createdAt && (
+            <p className="text-xs text-muted-foreground mt-1">Member since {new Date(profile.createdAt).toLocaleDateString()}</p>
+          )}
         </div>
       </div>
 
@@ -497,10 +590,22 @@ export function StaffSettings() {
                     <ShieldCheck className="h-4 w-4 text-green-600" />
                     <div>
                       <p className="text-sm font-medium">Account Status</p>
-                      <p className="text-xs text-muted-foreground">Active and in good standing</p>
+                      <p className="text-xs text-muted-foreground">
+                        {profile.approvalStatus === 'pending' ? 'Awaiting admin approval' :
+                         profile.approvalStatus === 'rejected' ? 'Account registration rejected' :
+                         'Active and in good standing'}
+                      </p>
                     </div>
                   </div>
-                  <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Active</Badge>
+                  <Badge className={
+                    profile.approvalStatus === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                    profile.approvalStatus === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                    'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                  }>
+                    {profile.approvalStatus === 'pending' ? 'Pending' :
+                     profile.approvalStatus === 'rejected' ? 'Rejected' :
+                     'Active'}
+                  </Badge>
                 </div>
                 <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                   <div className="flex items-center gap-3">
@@ -657,6 +762,15 @@ export function StaffSettings() {
         {/* 5. Personal Sales Information */}
         <TabsContent value="sales">
           <div className="space-y-4">
+            {salesError && (
+              <div className="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">{salesError}</p>
+                <Button variant="outline" size="sm" onClick={fetchSalesData} className="ml-3 shrink-0 gap-1.5">
+                  <RefreshCw className="h-3.5 w-3.5" /> Retry
+                </Button>
+              </div>
+            )}
+
             {/* Sales Summary Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Card>
