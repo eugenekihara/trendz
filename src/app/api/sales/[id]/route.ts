@@ -62,9 +62,10 @@ export async function DELETE(
         })
       }
 
-      // 2. Delete associated SalesEntry mirror records (POS entries linked to this sale)
+      // 2. Delete ALL associated SalesEntry records linked to this sale
+      //    (POS mirror entries have source='pos', but delete all to be safe)
       await tx.salesEntry.deleteMany({
-        where: { saleId: sale.id, source: 'pos' },
+        where: { saleId: sale.id },
       })
 
       // 3. Delete the sale (SaleItems are cascade-deleted by Prisma)
