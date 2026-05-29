@@ -35,6 +35,7 @@ import {
   Calendar,
   RefreshCw,
   AlertCircle,
+  Loader2,
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { toast } from 'sonner'
@@ -73,6 +74,30 @@ interface SalesData {
   dailyTrend: { date: string; count: number; amount: number }[]
 }
 
+/**
+ * Build a minimal ProfileData from the Zustand store user object.
+ * This is used as a fallback when the /api/staff-profile endpoint fails,
+ * ensuring the settings page always renders with at least basic data.
+ */
+function profileFromStoreUser(user: { id: string; email: string; name: string; role: string; avatar?: string | null; phone?: string | null; approvalStatus?: string } | null): ProfileData | null {
+  if (!user) return null
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    avatar: user.avatar ?? null,
+    phone: user.phone ?? null,
+    theme: 'light',
+    language: 'en',
+    notifySales: true,
+    notifyInventory: true,
+    notifyTasks: true,
+    approvalStatus: user.approvalStatus,
+    createdAt: new Date().toISOString(),
+  }
+}
+
 export function StaffSettings() {
   const user = useAppStore((s) => s.user)
   const updateUser = useAppStore((s) => s.updateUser)
@@ -83,9 +108,11 @@ export function StaffSettings() {
   const [salesData, setSalesData] = useState<SalesData | null>(null)
   const [loading, setLoading] = useState(true)
   const [profileError, setProfileError] = useState<string | null>(null)
+  const [profileErrorCode, setProfileErrorCode] = useState<string | null>(null)
   const [salesError, setSalesError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [usingFallbackData, setUsingFallbackData] = useState(false)
 
   // Profile form
   const [profileForm, setProfileForm] = useState({
@@ -114,51 +141,89 @@ export function StaffSettings() {
   const [notifyInventory, setNotifyInventory] = useState(true)
   const [notifyTasks, setNotifyTasks] = useState(true)
 
+  /**
+   * Populate form fields from a ProfileData object.
+   * Handles null/undefined fields gracefully.
+   */
+  const applyProfileData = useCallback((data: ProfileData) => {
+    setProfile(data)
+    setProfileForm({
+      name: data.name || '',
+      email: data.email || '',
+      phone: data.phone || '',
+      avatar: data.avatar || '',
+    })
+    setTheme(data.theme || 'light')
+    setLanguage(data.language || 'en')
+    setNotifySales(data.notifySales ?? true)
+    setNotifyInventory(data.notifyInventory ?? true)
+    setNotifyTasks(data.notifyTasks ?? true)
+  }, [])
+
   const fetchProfile = useCallback(async () => {
     try {
       setProfileError(null)
+      setProfileErrorCode(null)
+      setUsingFallbackData(false)
+
       const res = await authFetch('/api/staff-profile')
+
       if (res.ok) {
         const data = await res.json()
         if (data && typeof data === 'object' && data.id) {
-          setProfile(data)
-          setProfileForm({
-            name: data.name || '',
-            email: data.email || '',
-            phone: data.phone || '',
-            avatar: data.avatar || '',
-          })
-          setTheme(data.theme || 'light')
-          setLanguage(data.language || 'en')
-          setNotifySales(data.notifySales ?? true)
-          setNotifyInventory(data.notifyInventory ?? true)
-          setNotifyTasks(data.notifyTasks ?? true)
+          applyProfileData(data)
+          return // Success
         } else {
-          // API returned OK but data is not a valid user object
           console.error('Profile API returned unexpected data:', data)
           setProfileError('Received invalid profile data from server')
+          setProfileErrorCode('INVALID_DATA')
         }
       } else {
-        // Read the error message from the API response
+        // Parse the API error response for details
         let errorMsg = 'Failed to load profile'
+        let errorCode = 'UNKNOWN'
         try {
           const errorData = await res.json()
           if (errorData?.error) errorMsg = errorData.error
+          if (errorData?.code) errorCode = errorData.code
         } catch { /* ignore json parse errors */ }
 
         if (res.status === 401) {
-          setProfileError('Your session has expired. Please log in again.')
+          errorCode = 'AUTH_FAILED'
+          errorMsg = 'Your session has expired. Please log in again.'
         } else if (res.status === 404) {
-          setProfileError('User account not found. Please contact an administrator.')
-        } else {
-          setProfileError(errorMsg)
+          errorCode = 'USER_NOT_FOUND'
+          errorMsg = 'User account not found. Please contact an administrator.'
+        }
+
+        setProfileError(errorMsg)
+        setProfileErrorCode(errorCode)
+      }
+
+      // FALLBACK: If the API failed, use the Zustand store user data
+      // so the settings page still renders with basic information
+      if (!profile && user) {
+        const fallback = profileFromStoreUser(user)
+        if (fallback) {
+          applyProfileData(fallback)
+          setUsingFallbackData(true)
         }
       }
     } catch (error) {
       console.error('Fetch profile error:', error)
       setProfileError('Network error — could not reach the server')
+      setProfileErrorCode('NETWORK_ERROR')
+
+      // FALLBACK: Use store data on network error
+      if (!profile && user) {
+        const fallback = profileFromStoreUser(user)
+        if (fallback) {
+          applyProfileData(fallback)
+          setUsingFallbackData(true)
+        }
+      }
     }
-  }, [authFetch])
+  }, [authFetch, user, profile, applyProfileData])
 
   const fetchSalesData = useCallback(async () => {
     try {
@@ -168,7 +233,6 @@ export function StaffSettings() {
         const data = await res.json()
         setSalesData(data)
       } else {
-        // Non-critical: sales data failure shouldn't block the profile page
         setSalesError('Could not load sales data')
       }
     } catch (error) {
@@ -228,7 +292,10 @@ export function StaffSettings() {
         toast.error(data.error || 'Failed to update profile')
         return
       }
-      setProfile(data)
+      if (data && typeof data === 'object' && data.id) {
+        applyProfileData(data)
+        setUsingFallbackData(false)
+      }
       updateUser({ name: data.name, email: data.email, avatar: data.avatar, phone: data.phone })
       toast.success('Profile updated successfully')
     } catch {
@@ -281,8 +348,9 @@ export function StaffSettings() {
         return
       }
       const data = await res.json()
-      if (data && typeof data === 'object') {
-        setProfile(data)
+      if (data && typeof data === 'object' && data.id) {
+        applyProfileData(data)
+        setUsingFallbackData(false)
       }
       toast.success('Preference updated')
 
@@ -315,6 +383,7 @@ export function StaffSettings() {
     return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
   }
 
+  // ── Loading state ──
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -326,8 +395,8 @@ export function StaffSettings() {
     )
   }
 
-  // Auth error — session expired, suggest re-login
-  if (!profile && profileError?.includes('session has expired')) {
+  // ── Auth error — session expired, suggest re-login ──
+  if (!profile && profileErrorCode === 'AUTH_FAILED') {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center space-y-4">
@@ -344,7 +413,7 @@ export function StaffSettings() {
     )
   }
 
-  // Profile failed to load — show error with retry (not a session issue)
+  // ── Profile failed completely and no fallback data available ──
   if (!profile) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -365,7 +434,7 @@ export function StaffSettings() {
                 <RefreshCw className={`h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
                 {retrying ? 'Retrying...' : 'Try Again'}
               </Button>
-              {profileError?.includes('session') && (
+              {profileErrorCode === 'AUTH_FAILED' && (
                 <Button onClick={logout} className="bg-amber-800 hover:bg-amber-900 text-white">
                   Log In Again
                 </Button>
@@ -377,8 +446,20 @@ export function StaffSettings() {
     )
   }
 
+  // ── Profile loaded (from API or fallback) — render the full settings UI ──
   return (
     <div className="max-w-4xl mx-auto space-y-4">
+      {/* Fallback data notice — shown when the API failed but we recovered using session data */}
+      {usingFallbackData && (
+        <div className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>Some profile data may not be current. <button onClick={handleRetry} disabled={retrying} className="underline font-medium hover:text-amber-900 dark:hover:text-amber-100">Refresh</button></span>
+          </div>
+          {retrying && <Loader2 className="h-4 w-4 animate-spin text-amber-600" />}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-4 mb-2">
         <Avatar className="h-16 w-16">

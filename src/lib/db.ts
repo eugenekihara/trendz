@@ -10,4 +10,7 @@ export const db =
     log: ['error', 'warn'],
   })
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+// Always cache the Prisma client on globalThis, including in production.
+// This prevents connection pool exhaustion caused by creating a new Prisma
+// client instance on every hot-reload or module re-evaluation.
+globalForPrisma.prisma = db
