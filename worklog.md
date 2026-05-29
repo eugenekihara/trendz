@@ -149,3 +149,33 @@ Stage Summary:
 - Credit order balance tracking now correctly preserves depositAmount
 - Sales discount validation prevents negative/excessive discounts
 - Categories endpoint now requires authentication
+---
+Task ID: category-scrolling-fix
+Agent: Main Agent
+Task: Fix scrolling issue in Manage Categories dialog
+
+Work Log:
+- Analyzed the Manage Categories dialog in inventory.tsx (lines 596-650)
+- Identified root causes of scrolling failure:
+  1. DialogContent base class uses `grid` display - conflicting with `flex flex-col` override
+  2. ScrollArea component relies on parent having explicit height but flex-1 wasn't working due to grid display
+  3. The nested wrapper div with `overflow-hidden` blocked native scrolling while ScrollArea couldn't establish proper height
+  4. `max-h-[50vh]` on ScrollArea was too restrictive especially on mobile screens
+- Applied fix:
+  - Used `!flex !flex-col` with `!important` to override the base `grid` display
+  - Set `p-0 gap-0` on DialogContent to take full control of spacing
+  - Flattened the structure: removed the extra wrapper div
+  - Made header and form `shrink-0` (fixed, non-scrolling)
+  - Replaced ScrollArea with native `overflow-y-auto overscroll-contain` on the category list container
+  - Added `flex-1 min-h-0` on the scrollable container for proper flex sizing
+  - Added `border-b` separator between form and list for visual clarity
+  - Moved padding to individual sections (header, form, list) instead of on DialogContent
+  - Increased max height to `max-h-[90vh]` for better viewport usage
+- Build verified: compiles successfully with no errors
+
+Stage Summary:
+- Manage Categories dialog scrolling fixed
+- Header and form stay fixed while category list scrolls smoothly
+- Native overflow-y-auto replaces Radix ScrollArea for reliable scrolling
+- Responsive on all screen sizes (desktop, tablet, mobile)
+- Text and buttons properly contained with truncate and overflow-hidden

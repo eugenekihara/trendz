@@ -595,56 +595,55 @@ export function Inventory() {
 
       {/* Category Management Dialog */}
       <Dialog open={categoryDialog} onOpenChange={setCategoryDialog}>
-        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
-          <DialogHeader className="shrink-0">
+        <DialogContent className="max-w-lg max-h-[90vh] !flex !flex-col overflow-hidden p-0 gap-0">
+          {/* Fixed Header */}
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-2">
             <DialogTitle>Manage Categories</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-4 min-h-0 flex-1 overflow-hidden">
-            {/* Add/Edit Category */}
-            <div className="shrink-0 space-y-2">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input placeholder="Category name" value={catForm.name} onChange={(e) => setCatForm({ ...catForm, name: e.target.value })} className="sm:w-40" />
-                <Input placeholder="Description (optional)" value={catForm.description} onChange={(e) => setCatForm({ ...catForm, description: e.target.value })} className="flex-1 min-w-0" />
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={saveCategory} className="bg-amber-800 hover:bg-amber-900 text-white shrink-0">
-                  {editingCategory ? 'Update' : 'Add'}
-                </Button>
-                {editingCategory && (
-                  <Button variant="outline" onClick={() => { setEditingCategory(null); setCatForm({ name: '', description: '', icon: '' }) }}>Cancel</Button>
-                )}
-              </div>
+          {/* Fixed Add/Edit Form */}
+          <div className="shrink-0 px-6 pb-3 space-y-2 border-b">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input placeholder="Category name" value={catForm.name} onChange={(e) => setCatForm({ ...catForm, name: e.target.value })} className="sm:w-40" />
+              <Input placeholder="Description (optional)" value={catForm.description} onChange={(e) => setCatForm({ ...catForm, description: e.target.value })} className="flex-1 min-w-0" />
             </div>
-            {/* Category List */}
-            <ScrollArea className="flex-1 min-h-0 max-h-[50vh]">
-              <div className="space-y-2 pr-1">
-                {categories.length === 0 ? (
-                  <div className="text-center py-6 text-muted-foreground">
-                    <Tags className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No categories yet</p>
-                  </div>
-                ) : (
-                  categories.map((cat) => (
-                    <div key={cat.id} className="flex items-center justify-between gap-2 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
-                      <div className="min-w-0 flex-1 overflow-hidden">
-                        <p className="font-medium text-sm truncate">{cat.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {cat.description || 'No description'} · {cat._count?.products || 0} product{(cat._count?.products || 0) !== 1 ? 's' : ''}
-                        </p>
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingCategory(cat); setCatForm({ name: cat.name, description: cat.description || '', icon: cat.icon || '' }) }}>
-                          <Edit2 className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600" onClick={() => openDeleteCategory(cat)}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                )}
+            <div className="flex gap-2">
+              <Button onClick={saveCategory} className="bg-amber-800 hover:bg-amber-900 text-white shrink-0">
+                {editingCategory ? 'Update' : 'Add'}
+              </Button>
+              {editingCategory && (
+                <Button variant="outline" onClick={() => { setEditingCategory(null); setCatForm({ name: '', description: '', icon: '' }) }}>Cancel</Button>
+              )}
+            </div>
+          </div>
+          {/* Scrollable Category List */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 py-3">
+            {categories.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <Tags className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No categories yet</p>
               </div>
-            </ScrollArea>
+            ) : (
+              <div className="space-y-2">
+                {categories.map((cat) => (
+                  <div key={cat.id} className="flex items-center justify-between gap-2 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <p className="font-medium text-sm truncate">{cat.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {cat.description || 'No description'} · {cat._count?.products || 0} product{(cat._count?.products || 0) !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingCategory(cat); setCatForm({ name: cat.name, description: cat.description || '', icon: cat.icon || '' }) }}>
+                        <Edit2 className="h-3 w-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600" onClick={() => openDeleteCategory(cat)}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
