@@ -179,3 +179,56 @@ Stage Summary:
 - Native overflow-y-auto replaces Radix ScrollArea for reliable scrolling
 - Responsive on all screen sizes (desktop, tablet, mobile)
 - Text and buttons properly contained with truncate and overflow-hidden
+---
+Task ID: admin-approval-system
+Agent: Main Agent
+Task: Implement Admin Approval system for newly registered users
+
+Work Log:
+- Added `approvalStatus` field (pending/approved/rejected) to Prisma User model with default 'approved'
+- Created migration 20240530000000_add_approval_status
+- Applied schema change with prisma db push
+- Updated auth.ts verifyAuth() to check approvalStatus: pending/rejected users are blocked
+- Updated login route: returns 403 with specific messages for pending/rejected users
+- Updated registration route: sets approvalStatus='pending', does NOT create session cookie
+- Registration creates a notification for admins about new user sign-up
+- Created /api/users/approvals API (GET: list/filter by status, PUT: approve/reject)
+- Updated /api/users and /api/users/[id] to include approvalStatus in select
+- Admin-created users (via /api/users POST) auto-approved
+- Setup wizard auto-approves first admin (approvalStatus='approved')
+- Updated store.ts User interface with approvalStatus field
+- Updated session API to include approvalStatus in response
+- Updated staff-profile API to include approvalStatus
+- Built Approvals tab in Admin Settings with:
+  - Summary cards (Pending/Approved/Rejected counts with click-to-filter)
+  - User list with avatar, details, role, status badges, registration date
+  - Approve/Reject buttons for pending users
+  - Re-approve for rejected users, Revoke for approved users
+  - Confirmation dialogs for destructive actions
+  - Auto-load data when tab is selected
+  - Pending count badge on tab trigger
+- Updated Users tab to show approval status column
+- Updated Register component:
+  - Shows "Account Pending Approval" screen after registration (with Clock icon)
+  - No auto-login after registration
+  - "Back to Sign In" button on pending screen
+  - Updated info notice about admin approval requirement
+- Updated Login component:
+  - Tracks approvalStatus from login error response
+  - Distinct amber banner with Clock icon for pending users
+  - Distinct red banner with XCircle icon for rejected users
+  - Standard red error for other login failures
+- Tested: database-level approval status transitions (pending → approved → rejected → approved)
+- Tested: auth logic blocks pending and rejected users, allows approved users
+- Tested: existing admin/staff users have 'approved' status (migration default)
+- Build verified: compiles successfully with no errors
+- Pushed to GitHub: commit f9e7783
+
+Stage Summary:
+- Complete Admin Approval system implemented end-to-end
+- New users start as 'pending' and cannot access the system until approved
+- Admins can view, approve, and reject registrations from Settings > Approvals tab
+- Login and API routes enforce approval checks at multiple levels
+- Registration notifications alert admins to new sign-ups
+- All existing users retain 'approved' status from migration default
+- 16 files changed, 488 insertions, 41 deletions
