@@ -104,7 +104,7 @@ export async function createInitialAdmin(data: {
   // Hash the password before storing
   const hashedPassword = await hashPassword(data.password)
 
-  // Create admin user
+  // Create admin user (auto-approved since this is the initial setup)
   const user = await db.user.create({
     data: {
       email: data.email,
@@ -112,6 +112,7 @@ export async function createInitialAdmin(data: {
       password: hashedPassword,
       role: 'admin',
       active: true,
+      approvalStatus: 'approved', // First admin is auto-approved
       theme: 'light',
       language: 'en',
       notifySales: true,

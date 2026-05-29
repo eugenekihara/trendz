@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Gem, Eye, EyeOff } from 'lucide-react'
+import { Gem, Eye, EyeOff, Clock, XCircle } from 'lucide-react'
 
 interface LoginProps {
   onSwitchToRegister?: () => void
@@ -18,12 +18,14 @@ export function Login({ onSwitchToRegister }: LoginProps) {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [approvalStatus, setApprovalStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const login = useAppStore((s) => s.login)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setApprovalStatus(null)
     setLoading(true)
 
     try {
@@ -36,6 +38,9 @@ export function Login({ onSwitchToRegister }: LoginProps) {
       const data = await res.json()
       if (!res.ok) {
         setError(data.error || 'Login failed')
+        if (data.approvalStatus) {
+          setApprovalStatus(data.approvalStatus)
+        }
         return
       }
 
@@ -105,8 +110,18 @@ export function Login({ onSwitchToRegister }: LoginProps) {
               </div>
             </div>
             {error && (
-              <div className="text-sm text-red-600 dark:text-red-400 text-center bg-red-50 dark:bg-red-950/30 p-2 rounded">
-                {error}
+              <div className={`text-sm text-center p-3 rounded ${
+                approvalStatus === 'pending'
+                  ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                  : approvalStatus === 'rejected'
+                  ? 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800'
+                  : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-2'
+              }`}>
+                <div className="flex items-center justify-center gap-2">
+                  {approvalStatus === 'pending' && <Clock className="h-4 w-4 shrink-0" />}
+                  {approvalStatus === 'rejected' && <XCircle className="h-4 w-4 shrink-0" />}
+                  <span>{error}</span>
+                </div>
               </div>
             )}
             <Button

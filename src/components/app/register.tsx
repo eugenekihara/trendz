@@ -25,6 +25,7 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [pendingApproval, setPendingApproval] = useState(false)
 
   const passwordStrength = (() => {
     if (!password) return { level: 0, label: '', color: '' }
@@ -85,18 +86,24 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
         return
       }
 
-      // Show success state briefly, then auto-login
-      setSuccess(true)
-      setTimeout(() => {
-        login({
-          id: data.id,
-          email: data.email,
-          name: data.name,
-          role: data.role,
-          avatar: data.avatar,
-          phone: data.phone,
-        })
-      }, 1500)
+      // Check if the account is pending approval
+      if (data.approvalStatus === 'pending') {
+        setPendingApproval(true)
+        setSuccess(true)
+      } else {
+        // Fallback: Show success state briefly, then auto-login
+        setSuccess(true)
+        setTimeout(() => {
+          login({
+            id: data.id,
+            email: data.email,
+            name: data.name,
+            role: data.role,
+            avatar: data.avatar,
+            phone: data.phone,
+          })
+        }, 1500)
+      }
     } catch (err) {
       setError('Network error. Please check your connection and try again.')
     } finally {
@@ -105,6 +112,36 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
   }
 
   if (success) {
+    if (pendingApproval) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-gray-950 dark:via-gray-900 dark:to-amber-950 p-4">
+          <Card className="w-full max-w-md shadow-xl border-0">
+            <CardContent className="py-8 text-center space-y-4">
+              <div className="flex justify-center">
+                <Clock className="h-16 w-16 text-amber-600" />
+              </div>
+              <h2 className="text-xl font-semibold">Account Pending Approval</h2>
+              <p className="text-muted-foreground text-sm">
+                Your account has been created successfully and is now awaiting approval from an administrator.
+                You will be able to log in once your registration has been approved.
+              </p>
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg text-sm text-amber-800 dark:text-amber-300">
+                You will receive access after an admin reviews and approves your account. This usually happens within 24 hours.
+              </div>
+              <Button
+                onClick={onSwitchToLogin}
+                variant="outline"
+                className="mt-4 w-full"
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Sign In
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-gray-950 dark:via-gray-900 dark:to-amber-950 p-4">
         <Card className="w-full max-w-md shadow-xl border-0">
@@ -269,8 +306,9 @@ export function Register({ onSwitchToLogin }: RegisterProps) {
 
             {/* Info notice */}
             <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-xs text-muted-foreground">
-              New accounts are created with <strong>Staff</strong> role by default.
-              An administrator can change your role and permissions after registration.
+              New accounts require <strong>admin approval</strong> before you can log in.
+              After registration, an administrator will review and approve your account.
+              Default role is <strong>Staff</strong>.
             </div>
 
             {/* Error message */}

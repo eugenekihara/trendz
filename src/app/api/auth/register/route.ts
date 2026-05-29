@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hashPassword, createSessionToken, getSessionCookieName, getSessionMaxAge } from '@/lib/auth'
+import { hashPassword } from '@/lib/auth'
 
 export async function POST(request: Request) {
   try {
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // ─── Create user (defaults to staff role) ─────────────────────
+    // ─── Create user (defaults to staff role, pending approval) ────
     const hashedPassword = await hashPassword(password)
 
     const user = await db.user.create({
@@ -62,6 +62,7 @@ export async function POST(request: Request) {
         phone: phone?.trim() || null,
         role: 'staff', // Default role for self-registration
         active: true,
+        approvalStatus: 'pending', // New users require admin approval
         theme: 'light',
         language: 'en',
         notifySales: true,
@@ -70,9 +71,8 @@ export async function POST(request: Request) {
       },
     })
 
-    // ─── Create session and set cookie ────────────────────────────
-    const token = await createSessionToken(user.id)
-
+    // ─── Do NOT create session — user must wait for admin approval ──
+    // Return user data WITHOUT session cookie so the client shows the pending message
     const userData = {
       id: user.id,
       email: user.email,
@@ -80,20 +80,30 @@ export async function POST(request: Request) {
       role: user.role,
       avatar: user.avatar,
       phone: user.phone,
+      approvalStatus: user.approvalStatus,
+    }
+
+    // ─── Create notification for admins about new registration ─────
+    try {
+      await db.notification.create({
+        data: {
+          type: 'user_registration',
+          title: 'New User Registration',
+          message: `${name.trim()} (${normalizedEmail}) has registered and is awaiting approval.`,
+          read: false,
+        },
+      })
+    } catch (e) {
+      console.error('Failed to create registration notification:', e)
     }
 
     const response = NextResponse.json({
       ...userData,
-      message: 'Account created successfully! Welcome to Trendz.',
+      approvalStatus: 'pending',
+      message: 'Your account has been created and is awaiting admin approval. You will be able to log in once an administrator approves your registration.',
     }, { status: 201 })
 
-    response.cookies.set(getSessionCookieName(), token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: getSessionMaxAge(),
-      path: '/',
-    })
+    // No session cookie set — user cannot access protected routes until approved
 
     return response
   } catch (error: any) {

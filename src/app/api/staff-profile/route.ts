@@ -16,7 +16,7 @@ export async function GET() {
       select: {
         id: true, email: true, name: true, role: true, avatar: true, phone: true,
         theme: true, language: true, notifySales: true, notifyInventory: true,
-        notifyTasks: true, createdAt: true,
+        notifyTasks: true, approvalStatus: true, createdAt: true,
       },
     })
 
@@ -58,7 +58,7 @@ export async function PUT(request: Request) {
       select: {
         id: true, email: true, name: true, role: true, avatar: true, phone: true,
         theme: true, language: true, notifySales: true, notifyInventory: true,
-        notifyTasks: true,
+        notifyTasks: true, approvalStatus: true,
       },
     })
 

@@ -136,6 +136,14 @@ export async function verifyAuth(requiredRole?: string | string[]) {
       return { authenticated: false, user: null, error: 'User not found or inactive' }
     }
 
+    // Approval status check — pending or rejected users cannot access protected routes
+    if (user.approvalStatus === 'pending') {
+      return { authenticated: false, user: null, error: 'Your account is awaiting admin approval' }
+    }
+    if (user.approvalStatus === 'rejected') {
+      return { authenticated: false, user: null, error: 'Your account registration has been rejected' }
+    }
+
     // Role check uses the DATABASE value, not any client-supplied value
     if (requiredRole) {
       const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole]

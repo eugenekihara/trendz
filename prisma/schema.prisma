@@ -16,6 +16,7 @@ model User {
   avatar         String?
   phone          String?
   active         Boolean  @default(true)
+  approvalStatus String   @default("approved") // pending, approved, rejected
   theme          String   @default("light")
   language       String   @default("en")
   notifySales    Boolean  @default(true)

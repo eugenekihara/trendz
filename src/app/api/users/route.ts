@@ -15,7 +15,7 @@ export async function GET() {
     const users = await db.user.findMany({
       select: {
         id: true, email: true, name: true, role: true, avatar: true, phone: true,
-        active: true, theme: true, language: true, createdAt: true,
+        active: true, approvalStatus: true, theme: true, language: true, createdAt: true,
       },
       orderBy: { name: 'asc' },
     })
@@ -51,8 +51,9 @@ export async function POST(request: Request) {
         role: data.role || 'staff',
         phone: data.phone || null,
         active: true,
+        approvalStatus: 'approved', // Admin-created users are auto-approved
       },
-      select: { id: true, email: true, name: true, role: true, active: true },
+      select: { id: true, email: true, name: true, role: true, active: true, approvalStatus: true },
     })
 
     await db.auditLog.create({

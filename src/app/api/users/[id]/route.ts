@@ -14,7 +14,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params
     const user = await db.user.findUnique({
       where: { id },
-      select: { id: true, email: true, name: true, role: true, avatar: true, phone: true, active: true, createdAt: true },
+      select: { id: true, email: true, name: true, role: true, avatar: true, phone: true, active: true, approvalStatus: true, createdAt: true },
     })
 
     if (!user) {
@@ -46,6 +46,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       phone: data.phone || null,
       avatar: data.avatar || null,
       active: data.active !== undefined ? data.active : undefined,
+      approvalStatus: data.approvalStatus !== undefined ? data.approvalStatus : undefined,
     }
 
     // Hash password if provided
@@ -56,7 +57,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const user = await db.user.update({
       where: { id },
       data: updateData,
-      select: { id: true, email: true, name: true, role: true, active: true },
+      select: { id: true, email: true, name: true, role: true, active: true, approvalStatus: true },
     })
 
     await db.auditLog.create({

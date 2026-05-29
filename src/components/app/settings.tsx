@@ -17,7 +17,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { TrendzLogo } from './trendz-logo'
-import { Settings as SettingsIcon, Building2, Users, Shield, Package, ShoppingCart, BarChart3, Bell, Lock, Database, Palette, FileText, Info, Plus, Edit2, Trash2, Download, Upload, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Settings as SettingsIcon, Building2, Users, Shield, Package, ShoppingCart, BarChart3, Bell, Lock, Database, Palette, FileText, Info, Plus, Edit2, Trash2, Download, Upload, AlertTriangle, RefreshCw, UserCheck, UserX, Clock, CheckCircle2, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 // Events that should trigger a Settings refresh
@@ -39,17 +39,33 @@ export function Settings() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
+  // Approval state
+  const [approvalData, setApprovalData] = useState<{ users: any[], summary: { pending: number, approved: number, rejected: number } }>({ users: [], summary: { pending: 0, approved: 0, rejected: 0 } })
+  const [approvalFilter, setApprovalFilter] = useState<string>('pending')
+  const [approvalLoading, setApprovalLoading] = useState(false)
+
   const loadAll = useCallback(async (showRefresh = false) => {
     try {
       if (showRefresh) setRefreshing(true)
-      const [settingsRes, usersRes, logsRes] = await Promise.all([
+      const [settingsRes, usersRes, logsRes, approvalsRes] = await Promise.all([
         authFetch('/api/settings'),
         authFetch('/api/users'),
         authFetch('/api/audit-logs'),
+        authFetch('/api/users/approvals?status=pending'),
       ])
       if (settingsRes.ok) setSettings(await settingsRes.json())
       if (usersRes.ok) setUsers(await usersRes.json())
       if (logsRes.ok) setAuditLogs(await logsRes.json())
+      if (approvalsRes.ok) {
+        const approvalResult = await approvalsRes.json()
+        setApprovalData(prev => ({
+          ...prev,
+          summary: {
+            ...prev.summary,
+            pending: approvalResult.summary?.pending ?? 0,
+          },
+        }))
+      }
     } catch {
       toast.error('Failed to load settings')
     } finally {
@@ -80,6 +96,45 @@ export function Settings() {
     })
     return unsubscribe
   }, [onDataChange, loadAll])
+
+  // Load approval data
+  const loadApprovals = useCallback(async (filter?: string) => {
+    try {
+      setApprovalLoading(true)
+      const statusParam = filter || approvalFilter
+      const res = await authFetch(`/api/users/approvals${statusParam ? `?status=${statusParam}` : ''}`)
+      if (res.ok) {
+        setApprovalData(await res.json())
+      }
+    } catch {
+      toast.error('Failed to load approval data')
+    } finally {
+      setApprovalLoading(false)
+    }
+  }, [authFetch, approvalFilter])
+
+  // Handle approval action (approve/reject)
+  const handleApproval = async (userId: string, action: 'approve' | 'reject') => {
+    try {
+      const res = await authFetch('/api/users/approvals', {
+        method: 'PUT',
+        body: JSON.stringify({ userId, action }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || `Failed to ${action} user`)
+        return
+      }
+      toast.success(data.message || `User ${action === 'approve' ? 'approved' : 'rejected'} successfully`)
+      // Refresh approvals and users lists
+      loadApprovals()
+      const usersRes2 = await authFetch('/api/users')
+      if (usersRes2.ok) setUsers(await usersRes2.json())
+      notifyDataChange('user-changed')
+    } catch {
+      toast.error(`Failed to ${action} user`)
+    }
+  }
 
   const updateSetting = async (key: string, value: string) => {
     try {
@@ -201,10 +256,11 @@ export function Settings() {
 
   return (
     <div className="space-y-4">
-      <Tabs defaultValue="business" className="space-y-4">
+      <Tabs defaultValue="business" className="space-y-4" onValueChange={(value) => { if (value === 'approvals') loadApprovals() }}>
         <ScrollArea className="w-full">
           <TabsList className="flex flex-nowrap gap-1 h-auto p-1">
             <TabsTrigger value="business" className="text-xs"><Building2 className="h-3.5 w-3.5 mr-1" />Business</TabsTrigger>
+            <TabsTrigger value="approvals" className="text-xs"><UserCheck className="h-3.5 w-3.5 mr-1" />Approvals{approvalData.summary.pending > 0 && <Badge className="ml-1.5 h-5 min-w-5 px-1.5 bg-amber-500 text-white text-[10px]">{approvalData.summary.pending}</Badge>}</TabsTrigger>
             <TabsTrigger value="users" className="text-xs"><Users className="h-3.5 w-3.5 mr-1" />Users</TabsTrigger>
             <TabsTrigger value="roles" className="text-xs"><Shield className="h-3.5 w-3.5 mr-1" />Roles</TabsTrigger>
             <TabsTrigger value="inventory" className="text-xs"><Package className="h-3.5 w-3.5 mr-1" />Inventory</TabsTrigger>
@@ -248,6 +304,172 @@ export function Settings() {
           </CardContent></Card>
         </TabsContent>
 
+        {/* User Approvals */}
+        <TabsContent value="approvals">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <UserCheck className="h-5 w-5 text-amber-700" />
+                  User Approvals
+                </CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Review and manage new user registrations. Approved users can log in and access the system based on their role.
+                </p>
+              </div>
+              <Button variant="outline" size="icon" onClick={() => loadApprovals()} disabled={approvalLoading} title="Refresh">
+                <RefreshCw className={`h-4 w-4 ${approvalLoading ? 'animate-spin' : ''}`} />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-3 gap-3">
+                <button
+                  onClick={() => { setApprovalFilter('pending'); loadApprovals('pending') }}
+                  className={`p-3 rounded-lg border-2 transition-all text-center ${
+                    approvalFilter === 'pending' ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/30' : 'border-muted hover:border-muted-foreground/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1.5 mb-1">
+                    <Clock className="h-4 w-4 text-amber-600" />
+                    <span className="text-2xl font-bold text-amber-700 dark:text-amber-400">{approvalData.summary.pending}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Pending</p>
+                </button>
+                <button
+                  onClick={() => { setApprovalFilter('approved'); loadApprovals('approved') }}
+                  className={`p-3 rounded-lg border-2 transition-all text-center ${
+                    approvalFilter === 'approved' ? 'border-green-500 bg-green-50 dark:bg-green-950/30' : 'border-muted hover:border-muted-foreground/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1.5 mb-1">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span className="text-2xl font-bold text-green-700 dark:text-green-400">{approvalData.summary.approved}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Approved</p>
+                </button>
+                <button
+                  onClick={() => { setApprovalFilter('rejected'); loadApprovals('rejected') }}
+                  className={`p-3 rounded-lg border-2 transition-all text-center ${
+                    approvalFilter === 'rejected' ? 'border-red-500 bg-red-50 dark:bg-red-950/30' : 'border-muted hover:border-muted-foreground/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1.5 mb-1">
+                    <XCircle className="h-4 w-4 text-red-600" />
+                    <span className="text-2xl font-bold text-red-700 dark:text-red-400">{approvalData.summary.rejected}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Rejected</p>
+                </button>
+              </div>
+
+              <Separator />
+
+              {/* User List */}
+              {approvalLoading && approvalData.users.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">Loading approval data...</div>
+              ) : approvalData.users.length === 0 ? (
+                <div className="text-center py-8">
+                  <UserCheck className="h-12 w-12 mx-auto mb-3 opacity-30 text-muted-foreground" />
+                  <p className="text-muted-foreground">
+                    {approvalFilter === 'pending' ? 'No pending registrations' :
+                     approvalFilter === 'approved' ? 'No approved users yet' :
+                     'No rejected users'}
+                  </p>
+                  {approvalFilter === 'pending' && (
+                    <p className="text-xs text-muted-foreground mt-1">New user registrations will appear here for your review.</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {approvalData.users.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between gap-3 p-4 rounded-lg border bg-card hover:bg-accent/30 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar className="h-10 w-10 shrink-0">
+                          <AvatarFallback className={`text-sm font-medium ${
+                            u.approvalStatus === 'pending' ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300' :
+                            u.approvalStatus === 'approved' ? 'bg-green-100 dark:bg-green-950 text-green-800 dark:text-green-300' :
+                            'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300'
+                          }`}>
+                            {u.name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{u.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{u.email}{u.phone ? ` · ${u.phone}` : ''}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-[10px] capitalize">{u.role}</Badge>
+                            <Badge className={`text-[10px] ${
+                              u.approvalStatus === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
+                              u.approvalStatus === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300' :
+                              'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
+                            }`}>
+                              {u.approvalStatus === 'pending' && <Clock className="h-2.5 w-2.5 mr-1" />}
+                              {u.approvalStatus === 'approved' && <CheckCircle2 className="h-2.5 w-2.5 mr-1" />}
+                              {u.approvalStatus === 'rejected' && <XCircle className="h-2.5 w-2.5 mr-1" />}
+                              {u.approvalStatus}
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground">
+                              Registered {new Date(u.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        {u.approvalStatus === 'pending' && (
+                          <>
+                            <Button
+                              size="sm"
+                              className="bg-green-700 hover:bg-green-800 text-white h-8"
+                              onClick={() => handleApproval(u.id, 'approve')}
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="h-8"
+                              onClick={() => {
+                                if (confirm(`Reject registration for ${u.name}? They will not be able to log in.`)) {
+                                  handleApproval(u.id, 'reject')
+                                }
+                              }}
+                            >
+                              <XCircle className="h-3.5 w-3.5 mr-1" /> Reject
+                            </Button>
+                          </>
+                        )}
+                        {u.approvalStatus === 'rejected' && (
+                          <Button
+                            size="sm"
+                            className="bg-green-700 hover:bg-green-800 text-white h-8"
+                            onClick={() => handleApproval(u.id, 'approve')}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Re-approve
+                          </Button>
+                        )}
+                        {u.approvalStatus === 'approved' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                            onClick={() => {
+                              if (confirm(`Revoke access for ${u.name}? They will no longer be able to log in.`)) {
+                                handleApproval(u.id, 'reject')
+                              }
+                            }}
+                          >
+                            <UserX className="h-3.5 w-3.5 mr-1" /> Revoke
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Users & Staff */}
         <TabsContent value="users">
           <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle>Users & Staff</CardTitle>
@@ -255,13 +477,18 @@ export function Settings() {
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Role</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Email</TableHead><TableHead>Role</TableHead><TableHead>Approval</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {users.map((u) => (
                     <TableRow key={u.id}>
                       <TableCell><div className="flex items-center gap-2"><Avatar className="h-7 w-7"><AvatarFallback className="text-xs bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">{u.name?.split(' ').map((n:string) => n[0]).join('')}</AvatarFallback></Avatar>{u.name}</div></TableCell>
                       <TableCell>{u.email}</TableCell>
                       <TableCell><Badge variant="outline" className="capitalize">{u.role}</Badge></TableCell>
+                      <TableCell><Badge className={`text-[10px] ${
+                        u.approvalStatus === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
+                        u.approvalStatus === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300' :
+                        'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
+                      }`}>{u.approvalStatus || 'approved'}</Badge></TableCell>
                       <TableCell><Badge className={u.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>{u.active ? 'Active' : 'Inactive'}</Badge></TableCell>
                       <TableCell className="text-right"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openUserDialog(u)}><Edit2 className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="icon" className="h-8 w-8 text-red-600" onClick={() => deleteUser(u.id)}><Trash2 className="h-3.5 w-3.5" /></Button></TableCell>
                     </TableRow>

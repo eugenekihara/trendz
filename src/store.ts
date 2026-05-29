@@ -9,6 +9,7 @@ interface User {
   role: 'admin' | 'staff'
   avatar?: string | null
   phone?: string | null
+  approvalStatus?: string
 }
 
 type ViewPage = 'dashboard' | 'inventory' | 'sales-pos' | 'sales-tracking' | 'suppliers' | 'credits' | 'reports' | 'settings' | 'staff-settings' | 'notifications'

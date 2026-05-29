@@ -19,6 +19,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Account is deactivated. Contact your administrator.' }, { status: 403 })
     }
 
+    // Check approval status before allowing login
+    if (user.approvalStatus === 'pending') {
+      return NextResponse.json(
+        { error: 'Your account is awaiting admin approval. You will be able to log in once an administrator approves your registration.', approvalStatus: 'pending' },
+        { status: 403 }
+      )
+    }
+    if (user.approvalStatus === 'rejected') {
+      return NextResponse.json(
+        { error: 'Your account registration has been rejected by an administrator. Please contact support if you believe this is an error.', approvalStatus: 'rejected' },
+        { status: 403 }
+      )
+    }
+
     // Verify password (supports both hashed and legacy plain text)
     const isValid = await verifyPassword(password, user.password)
     if (!isValid) {
@@ -46,6 +60,7 @@ export async function POST(request: Request) {
       role: user.role,
       avatar: user.avatar,
       phone: user.phone,
+      approvalStatus: user.approvalStatus,
     }
 
     // Set session cookie and return user data

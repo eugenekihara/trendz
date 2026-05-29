@@ -32,6 +32,7 @@ export async function GET() {
           role: auth.user.role,
           avatar: auth.user.avatar,
           phone: auth.user.phone,
+          approvalStatus: auth.user.approvalStatus,
         },
       },
       {
