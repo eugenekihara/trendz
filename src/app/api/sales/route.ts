@@ -100,6 +100,15 @@ export async function POST(request: Request) {
 
     const subtotal = data.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
     const discount = parseFloat(data.discount) || 0
+
+    // Validate discount: must be non-negative and cannot exceed subtotal
+    if (discount < 0) {
+      return NextResponse.json({ error: 'Discount cannot be negative' }, { status: 400 })
+    }
+    if (discount > subtotal) {
+      return NextResponse.json({ error: `Discount (KES ${discount.toLocaleString()}) cannot exceed subtotal (KES ${subtotal.toLocaleString()})` }, { status: 400 })
+    }
+
     const total = subtotal - discount
 
     // Wrap entire sale creation in a transaction for atomicity

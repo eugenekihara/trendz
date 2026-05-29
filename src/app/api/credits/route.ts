@@ -20,6 +20,7 @@ const EMPTY_SUMMARY = {
   totalOutstanding: 0,
   totalCreditAmount: 0,
   totalDepositPaid: 0,
+  totalPaid: 0,
   totalPayments: 0,
   fullyPaidCount: 0,
   depositPaidCount: 0,
@@ -92,6 +93,8 @@ export async function GET(request: Request) {
     // Compute summary stats
     const totalOutstanding = filtered.reduce((sum, o) => sum + (o.remainingBalance || 0), 0)
     const totalCreditAmount = filtered.reduce((sum, o) => sum + (o.totalAmount || 0), 0)
+    // Total paid = totalAmount - remainingBalance (includes deposit + all payments)
+    const totalPaid = filtered.reduce((sum, o) => sum + ((o.totalAmount || 0) - (o.remainingBalance || 0)), 0)
     const totalDepositPaid = filtered.reduce((sum, o) => sum + (o.depositAmount || 0), 0)
     const totalPayments = filtered.reduce((sum, o) => sum + (Array.isArray(o.payments) ? o.payments.reduce((s, p) => s + (p.amount || 0), 0) : 0), 0)
     const fullyPaidCount = filtered.filter((o) => o.paymentStatus === 'fully_paid').length
@@ -106,6 +109,7 @@ export async function GET(request: Request) {
           totalOutstanding,
           totalCreditAmount,
           totalDepositPaid,
+          totalPaid,
           totalPayments,
           fullyPaidCount,
           depositPaidCount,

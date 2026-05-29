@@ -44,14 +44,14 @@ export async function POST(
       }
 
       const newRemainingBalance = creditOrder.remainingBalance - amount
-      const totalPaidSoFar = creditOrder.totalAmount - newRemainingBalance
 
       // Determine new payment status
       let newPaymentStatus = creditOrder.paymentStatus
       if (newRemainingBalance <= 0) {
         newPaymentStatus = 'fully_paid'
-      } else if (totalPaidSoFar > 0 && newRemainingBalance < creditOrder.totalAmount) {
-        newPaymentStatus = 'partially_paid'
+      } else if (newRemainingBalance < creditOrder.totalAmount) {
+        // Any amount paid (deposit or payments) means at least partially paid
+        newPaymentStatus = creditOrder.depositAmount > 0 ? 'partially_paid' : 'partially_paid'
       }
 
       // Check if overdue (due date passed and not fully paid)
@@ -72,11 +72,12 @@ export async function POST(
       })
 
       // Update credit order balance and status
+      // NOTE: depositAmount stays as the original deposit — do NOT overwrite it with totalPaidSoFar
+      // Total paid can be calculated as: totalAmount - remainingBalance
       await tx.creditOrder.update({
         where: { id },
         data: {
           remainingBalance: Math.max(0, newRemainingBalance),
-          depositAmount: totalPaidSoFar,
           paymentStatus: newPaymentStatus,
         },
       })

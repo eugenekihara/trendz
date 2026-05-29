@@ -78,6 +78,7 @@ export function CreditManagement() {
     totalOutstanding: 0,
     totalCreditAmount: 0,
     totalDepositPaid: 0,
+    totalPaid: 0,
     totalPayments: 0,
     fullyPaidCount: 0,
     depositPaidCount: 0,
@@ -490,7 +491,7 @@ export function CreditManagement() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Paid</p>
-                <p className="text-2xl font-bold text-green-600">KES {safeLocaleString(summary.totalPayments)}</p>
+                <p className="text-2xl font-bold text-green-600">KES {safeLocaleString(summary.totalPaid)}</p>
                 <p className="text-xs text-muted-foreground">{summary.fullyPaidCount} fully paid</p>
               </div>
               <CheckCircle2 className="h-8 w-8 text-green-500 opacity-80" />
@@ -601,7 +602,7 @@ export function CreditManagement() {
                         <TableCell className="font-medium">{order.customerName}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{order.customerPhone || '-'}</TableCell>
                         <TableCell className="text-right">KES {safeLocaleString(order.totalAmount)}</TableCell>
-                        <TableCell className="text-right text-green-600">KES {safeLocaleString(order.depositAmount)}</TableCell>
+                        <TableCell className="text-right text-green-600">KES {safeLocaleString(order.totalAmount - order.remainingBalance)}</TableCell>
                         <TableCell className="text-right font-semibold text-red-600">KES {safeLocaleString(order.remainingBalance)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={`text-xs ${status.color}`}>
@@ -838,7 +839,7 @@ export function CreditManagement() {
               <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
                 <p><strong>Customer:</strong> {selectedOrder.customerName}</p>
                 <p><strong>Total:</strong> KES {safeLocaleString(selectedOrder.totalAmount)}</p>
-                <p><strong>Paid So Far:</strong> KES {safeLocaleString(selectedOrder.depositAmount)}</p>
+                <p><strong>Paid So Far:</strong> KES {safeLocaleString(selectedOrder.totalAmount - selectedOrder.remainingBalance)}</p>
                 <p><strong>Remaining:</strong> <span className="text-red-600 font-semibold">KES {safeLocaleString(selectedOrder.remainingBalance)}</span></p>
               </div>
               <div className="space-y-2">
@@ -947,7 +948,7 @@ export function CreditManagement() {
                 <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
                   <p className="font-semibold mb-2">Payment Info</p>
                   <p><strong>Total:</strong> KES {safeLocaleString(selectedOrder.totalAmount)}</p>
-                  <p><strong>Paid:</strong> <span className="text-green-600">KES {safeLocaleString(selectedOrder.depositAmount)}</span></p>
+                  <p><strong>Paid:</strong> <span className="text-green-600">KES {safeLocaleString(selectedOrder.totalAmount - selectedOrder.remainingBalance)}</span></p>
                   <p><strong>Balance:</strong> <span className="text-red-600 font-semibold">KES {safeLocaleString(selectedOrder.remainingBalance)}</span></p>
                   <p>
                     <strong>Status:</strong>{' '}
@@ -1092,7 +1093,7 @@ export function CreditManagement() {
               </p>
               <div className="p-3 bg-muted rounded-lg text-sm">
                 <p><strong>Total:</strong> KES {safeLocaleString(selectedOrder.totalAmount)}</p>
-                <p><strong>Paid:</strong> KES {safeLocaleString(selectedOrder.depositAmount)}</p>
+                <p><strong>Paid:</strong> KES {safeLocaleString(selectedOrder.totalAmount - selectedOrder.remainingBalance)}</p>
                 <p><strong>Remaining:</strong> KES {safeLocaleString(selectedOrder.remainingBalance)}</p>
                 <p><strong>Items:</strong> {selectedOrder.items?.length || 0} products</p>
               </div>

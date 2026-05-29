@@ -7,6 +7,12 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    // Require authentication — categories contain business data
+    const auth = await verifyAuth()
+    if (!auth.authenticated) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
     const categories = await db.category.findMany({
       orderBy: { name: 'asc' },
       include: { _count: { select: { products: { where: { active: true } } } } },

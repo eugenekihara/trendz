@@ -22,7 +22,8 @@ export async function GET() {
       db.creditOrder.findMany(),
       db.creditOrderItem.findMany(),
       db.creditPayment.findMany(),
-      db.setting.findMany(),
+      // Exclude sensitive settings (jwtSecret) from backup export
+      db.setting.findMany({ where: { key: { not: 'jwtSecret' } } }),
       db.notification.findMany(),
       db.auditLog.findMany(),
     ])
@@ -50,7 +51,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid backup data' }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
+    // Validate backup version compatibility
+    if (backup.version && !backup.version.startsWith('1.')) {
+      return NextResponse.json({ error: `Incompatible backup version: ${backup.version}. Expected 1.x` }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
+    }
+
     const { users, categories, products, suppliers, sales, saleItems, salesEntries, creditOrders, creditOrderItems, creditPayments, settings, notifications } = backup.data
+
+    // Filter out sensitive settings from the backup (e.g., jwtSecret)
+    const safeSettings = Array.isArray(settings)
+      ? settings.filter((s: any) => s.key !== 'jwtSecret')
+      : []
 
     await db.$transaction(async (tx) => {
       // Delete in order of dependencies
@@ -67,14 +78,14 @@ export async function POST(request: Request) {
       await tx.purchaseOrder.deleteMany()
       await tx.supplier.deleteMany()
       await tx.category.deleteMany()
-      await tx.setting.deleteMany()
+      await tx.setting.deleteMany({ where: { key: { not: 'jwtSecret' } } })
       await tx.user.deleteMany()
 
       // Restore in order
       if (users?.length) await tx.user.createMany({ data: users })
       if (categories?.length) await tx.category.createMany({ data: categories })
       if (suppliers?.length) await tx.supplier.createMany({ data: suppliers })
-      if (settings?.length) await tx.setting.createMany({ data: settings })
+      if (safeSettings.length) await tx.setting.createMany({ data: safeSettings })
       if (products?.length) await tx.product.createMany({ data: products })
       if (sales?.length) await tx.sale.createMany({ data: sales })
       if (saleItems?.length) await tx.saleItem.createMany({ data: saleItems })

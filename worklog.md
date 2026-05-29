@@ -119,3 +119,33 @@ Stage Summary:
 - Role-based access control confirmed working
 - Password hashing and JWT sessions working correctly
 - Export features (CSV/XLSX/PDF) all functional
+---
+Task ID: comprehensive-audit-fixes
+Agent: Main Agent
+Task: Comprehensive system audit - find and fix all bugs
+
+Work Log:
+- Audited all 27 API route files for auth, error handling, schema consistency
+- Tested database integrity: 0 orphaned records across all relations
+- Tested auth system: bcrypt hashing ✅, JWT sessions ✅, auto-upgrade ✅, validation ✅
+- Tested all data counts: 2 users, 21 products, 8 categories, 12 sales, 19 entries, 2 credits, 4 suppliers, 3 notifications
+- Fixed Bug #1: Credit payment route was overwriting depositAmount with totalPaidSoFar on each payment, corrupting the deposit tracking
+- Fixed Bug #2: Categories GET endpoint was missing auth check - now requires verifyAuth()
+- Fixed Bug #3: Settings PUT had no key whitelist - could overwrite jwtSecret. Added ALLOWED_SETTING_KEYS whitelist
+- Fixed Bug #3b: Settings GET was exposing jwtSecret - now filters it out
+- Fixed Bug #4: Backup GET was exporting jwtSecret setting - now excluded from exports
+- Fixed Bug #4b: Backup POST had no version check - added version compatibility validation
+- Fixed Bug #4c: Backup POST was restoring jwtSecret - now filters it out, preserves existing secret
+- Fixed Bug #5: Sales POST had no discount validation - added checks for negative discount and discount exceeding subtotal
+- Fixed Bug #6: Credit management UI was showing depositAmount as "Paid" - changed to (totalAmount - remainingBalance) for accurate total paid display
+- Fixed corrupted data: "Test" credit order had depositAmount=650 (wrongly inflated) - corrected to 200 (original deposit)
+- Added totalPaid field to credits API summary (totalAmount - remainingBalance per order)
+- Build succeeds with no errors
+
+Stage Summary:
+- 6 bugs fixed across API routes and UI
+- 1 corrupted database record corrected
+- Security improvements: jwtSecret hidden from settings API, backup exports, and settings updates
+- Credit order balance tracking now correctly preserves depositAmount
+- Sales discount validation prevents negative/excessive discounts
+- Categories endpoint now requires authentication
