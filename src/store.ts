@@ -61,7 +61,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   dataVersion: 0,
 
   login: (user) => set({ user, currentPage: 'dashboard' }),
-  logout: () => set({ user: null, currentPage: 'dashboard' }),
+  logout: () => {
+    // Call the server logout endpoint to clear the session cookie
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    set({ user: null, currentPage: 'dashboard', sidebarOpen: false })
+  },
   setCurrentPage: (page) => set({ currentPage: page }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   updateUser: (data) => set((state) => ({
@@ -69,12 +73,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   })),
 
   authFetch: async (url, options = {}) => {
-    const { user } = get()
     const headers = new Headers(options.headers || {})
-    if (user) {
-      headers.set('x-user-id', user.id)
-      headers.set('x-user-role', user.role)
-    }
+    // Session cookie is sent automatically by the browser (httpOnly cookie)
+    // No need to manually inject x-user-id / x-user-role headers anymore
     if (options.body && typeof options.body === 'string') {
       headers.set('Content-Type', 'application/json')
     }

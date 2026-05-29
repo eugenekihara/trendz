@@ -1,4 +1,5 @@
 import { db } from './db'
+import { hashPassword } from './auth'
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   shopName: 'Trendz',
@@ -89,6 +90,7 @@ export async function isSystemInitialized(): Promise<boolean> {
 
 /**
  * Create the initial admin account during setup.
+ * Password is hashed with bcrypt before storing.
  */
 export async function createInitialAdmin(data: {
   name: string
@@ -99,12 +101,15 @@ export async function createInitialAdmin(data: {
   // Ensure settings exist first
   await ensureDbSeeded()
 
+  // Hash the password before storing
+  const hashedPassword = await hashPassword(data.password)
+
   // Create admin user
   const user = await db.user.create({
     data: {
       email: data.email,
       name: data.name,
-      password: data.password,
+      password: hashedPassword,
       role: 'admin',
       active: true,
       theme: 'light',

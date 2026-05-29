@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isSystemInitialized, createInitialAdmin, ensureDbSeeded } from '@/lib/seed'
 import { db } from '@/lib/db'
+import { hashPassword, createSessionToken, getSessionCookieName, getSessionMaxAge } from '@/lib/auth'
 
 /**
  * GET /api/setup - Check if system needs initial setup
@@ -43,20 +44,41 @@ export async function POST(request: Request) {
     }
 
     // Check if email is already taken
-    const existingUser = await db.user.findUnique({ where: { email } })
+    const existingUser = await db.user.findUnique({ where: { email: email.toLowerCase().trim() } })
     if (existingUser) {
       return NextResponse.json({ error: 'Email is already registered' }, { status: 400 })
     }
 
-    const user = await createInitialAdmin({ name, email, password, shopName })
+    // Hash the admin password before storing
+    const user = await createInitialAdmin({
+      name,
+      email: email.toLowerCase().trim(),
+      password, // seed.ts will receive the plain password; we hash it there
+      shopName,
+    })
 
-    return NextResponse.json({
+    // Create session for auto-login after setup
+    const token = await createSessionToken(user.id)
+
+    const userData = {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       message: 'Admin account created successfully',
+    }
+
+    const response = NextResponse.json(userData)
+
+    response.cookies.set(getSessionCookieName(), token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: getSessionMaxAge(),
+      path: '/',
     })
+
+    return response
   } catch (error) {
     console.error('Setup POST error:', error)
     return NextResponse.json({ error: 'Failed to create admin account' }, { status: 500 })

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyAuth } from '@/lib/auth'
+import { hashPassword } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,16 +34,20 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json()
-    const existing = await db.user.findUnique({ where: { email: data.email } })
+    const existing = await db.user.findUnique({ where: { email: data.email?.toLowerCase().trim() } })
     if (existing) {
       return NextResponse.json({ error: 'Email already exists' }, { status: 400, headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } })
     }
 
+    // Hash password before storing
+    const plainPassword = data.password || 'changeme'
+    const hashedPassword = await hashPassword(plainPassword)
+
     const user = await db.user.create({
       data: {
-        email: data.email,
+        email: data.email?.toLowerCase().trim(),
         name: data.name,
-        password: data.password || 'changeme',
+        password: hashedPassword,
         role: data.role || 'staff',
         phone: data.phone || null,
         active: true,

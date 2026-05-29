@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { verifyAuth } from '@/lib/auth'
+import { verifyAuth, hashPassword } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,17 +38,24 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params
     const data = await request.json()
 
+    // Build update data
+    const updateData: any = {
+      name: data.name,
+      email: data.email?.toLowerCase().trim(),
+      role: data.role,
+      phone: data.phone || null,
+      avatar: data.avatar || null,
+      active: data.active !== undefined ? data.active : undefined,
+    }
+
+    // Hash password if provided
+    if (data.password && data.password.trim()) {
+      updateData.password = await hashPassword(data.password)
+    }
+
     const user = await db.user.update({
       where: { id },
-      data: {
-        name: data.name,
-        email: data.email,
-        role: data.role,
-        phone: data.phone || null,
-        avatar: data.avatar || null,
-        active: data.active !== undefined ? data.active : undefined,
-        password: data.password || undefined,
-      },
+      data: updateData,
       select: { id: true, email: true, name: true, role: true, active: true },
     })
 

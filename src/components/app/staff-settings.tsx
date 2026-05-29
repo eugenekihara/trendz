@@ -197,8 +197,8 @@ export function StaffSettings() {
       toast.error('New passwords do not match')
       return
     }
-    if (passwordForm.newPassword.length < 4) {
-      toast.error('Password must be at least 4 characters')
+    if (passwordForm.newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters')
       return
     }
     setChangingPassword(true)
